@@ -1979,11 +1979,11 @@
       /*
       var axhelp = new THREE.AxisHelper();
       this._scene.add(axhelp);
-     */
+     
       var box = new THREE.BoxGeometry(200,200,200);
       box = new THREE.Mesh(box, new THREE.MeshBasicMaterial());
       this._scene.add(box);
-    
+      */
 	  
 	  this._clipPlane = THREE.Plane(/*new THREE.Vector3(0.0,1.0,0.0), 0.0*/);
 
