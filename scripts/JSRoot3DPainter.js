@@ -113,12 +113,24 @@
                }
             }
             if ((pick!==null) && (INTERSECTED !== pick)) {
-               if (INTERSECTED && do_bins_highlight && ('emissive' in INTERSECTED.material))
+               if (INTERSECTED && do_bins_highlight && ('emissive' in INTERSECTED.material)) {
                   INTERSECTED.material.emissive.setHex(INTERSECTED.currentHex);
+                  // 0.96 and 1.04166 are inverse, allowing "highlight" bins to buldge
+                  // slightly and be visible over the unhighlighted ones
+                  INTERSECTED.scale.x *= 0.96;
+                  INTERSECTED.scale.y *= 0.96;
+                  INTERSECTED.scale.z *= 0.96;
+                  INTERSECTED.material.visible = false;
+               }
+
                INTERSECTED = pick;
                if (do_bins_highlight && ('emissive' in INTERSECTED.material)) {
                   INTERSECTED.currentHex = INTERSECTED.material.emissive.getHex();
                   INTERSECTED.material.emissive.setHex(0x5f5f5f);
+                  INTERSECTED.scale.x *= 1.04166666666666;
+                  INTERSECTED.scale.y *= 1.04166666666666;
+                  INTERSECTED.scale.z *= 1.04166666666666;
+                  INTERSECTED.material.visible = true;
                   painter.Render3D(0);
                }
 
@@ -127,6 +139,10 @@
          } else {
             if (INTERSECTED && do_bins_highlight && ('emissive' in INTERSECTED.material)) {
                INTERSECTED.material.emissive.setHex(INTERSECTED.currentHex);
+               INTERSECTED.scale.x *= 0.96;
+               INTERSECTED.scale.y *= 0.96;
+               INTERSECTED.scale.z *= 0.96;
+               INTERSECTED.material.visible = false;
                painter.Render3D(0);
             }
             INTERSECTED = null;
@@ -334,6 +350,7 @@
           grminz = 0, grmaxz = 2*this.size3d,
           textsize = Math.round(this.size3d * 0.07),
           bothsides = (this.size3d !== 0),
+          pad = this.root_pad(),
           xmin = this.xmin, xmax = this.xmax,
           ymin = this.ymin, ymax = this.ymax,
           zmin = this.zmin, zmax = this.zmax,
@@ -358,7 +375,7 @@
          zmin = this.zoom_zmin; zmax = this.zoom_zmax;
       }
 
-      if (this.options.Logx) {
+      if (pad && pad.fLogx) {
          if (xmax <= 0) xmax = 1.;
          if ((xmin <= 0) && (this.nbinsx > 0))
             for (var i=0;i<this.nbinsx;++i) {
@@ -377,7 +394,7 @@
       this.x_handle.SetAxisConfig("xaxis", this.x_kind, this.tx, this.xmin, this.xmax, xmin, xmax);
       this.x_handle.CreateFormatFuncs();
 
-      if (this.options.Logy) {
+      if (pad && pad.fLogy) {
          if (ymax <= 0) ymax = 1.;
          if ((ymin <= 0) && (this.nbinsy>0))
             for (var i=0;i<this.nbinsy;++i) {
@@ -397,7 +414,7 @@
       this.y_handle.SetAxisConfig("yaxis", this.y_kind, this.ty, this.ymin, this.ymax, ymin, ymax);
       this.y_handle.CreateFormatFuncs();
 
-      if (this.options.Logz) {
+      if (pad && pad.fLogz) {
          if (zmax <= 0) zmax = 1;
          if (zmin <= 0) zmin = 1e-4*zmax;
          this.tz = d3.scale.log();
@@ -433,7 +450,7 @@
          var plen = (is_major ? ticklen : ticklen * 0.6) * Math.sin(Math.PI/4);
 
          if (is_major) {
-            var text3d = new THREE.TextGeometry(lbl, { size : textsize, height : 0, curveSegments : 10 });
+            var text3d = new THREE.TextGeometry(lbl, { font: JSROOT.threejs_font_helvetiker_regular, size : textsize, height : 0, curveSegments : 10 });
             text3d.computeBoundingBox();
             var centerOffset = 0.5 * (text3d.boundingBox.max.x - text3d.boundingBox.min.x);
 
@@ -483,7 +500,7 @@
          var plen = (is_major ? ticklen : ticklen*0.6) * Math.sin(Math.PI/4);
 
          if (is_major) {
-            var text3d = new THREE.TextGeometry(lbl, { size : textsize, height : 0, curveSegments : 10 });
+            var text3d = new THREE.TextGeometry(lbl, { font: JSROOT.threejs_font_helvetiker_regular, size : textsize, height : 0, curveSegments : 10 });
 
             text3d.computeBoundingBox();
             var centerOffset = 0.5 * (text3d.boundingBox.max.x - text3d.boundingBox.min.x);
@@ -532,7 +549,7 @@
          var plen = (is_major ? ticklen : ticklen * 0.6) * Math.sin(Math.PI/4);
 
          if (is_major) {
-            var text3d = new THREE.TextGeometry(lbl, { size : textsize, height : 0, curveSegments : 10 });
+            var text3d = new THREE.TextGeometry(lbl, { font: JSROOT.threejs_font_helvetiker_regular, size : textsize, height : 0, curveSegments : 10 });
 
             text3d.computeBoundingBox();
             var offset = 0.8 * (text3d.boundingBox.max.x - text3d.boundingBox.min.x) + 0.7 * textsize;
@@ -734,7 +751,7 @@
 
       this.Create3DScene();
 
-      this.zmin = this.options.Logz ? this.gmin0bin * 0.3 : this.gminbin;
+      this.zmin = this.root_pad().fLogz ? this.gmin0bin * 0.3 : this.gminbin;
       this.zmax = this.gmaxbin * 1.05; // not very nice
 
       this.DrawXYZ();
@@ -924,13 +941,11 @@
 
       if (this.options.Box == 11) {
          material = new THREE.MeshPhongMaterial({ color : fillcolor.getHex(), specular : 0x4f4f4f });
-         //geom = new THREE.SphereGeometry(this.size3d / this.nbinsx);
-         geom = new THREE.SphereGeometry(0.5);
+         // geom = new THREE.SphereGeometry(0.5, 18, 16);
+         geom = JSROOT.Painter.TestWebGL() ? new THREE.SphereGeometry(0.5, 16, 12) : new THREE.SphereGeometry(0.5, 8, 6);
          geom.applyMatrix( new THREE.Matrix4().makeRotationX( Math.PI / 2 ) );
-         //geom.scale(1, this.nbinsx / this.nbinsy, this.nbinsx / this.nbinsz);
       } else {
          material = new THREE.MeshLambertMaterial({ color : fillcolor.getHex() });
-         // geom = new THREE.BoxGeometry(2 * this.size3d / this.nbinsx, 2 * this.size3d / this.nbinsy, 2 * this.size3d / this.nbinsz);
          geom = new THREE.BoxGeometry(1, 1, 1);
       }
 
@@ -946,6 +961,43 @@
       var scalex = (this.tx(this.GetBinX(i2+0.5)) - this.tx(this.GetBinX(i1+0.5))) / (i2-i1),
           scaley = (this.ty(this.GetBinY(j2+0.5)) - this.ty(this.GetBinY(j1+0.5))) / (j2-j1),
           scalez = (this.tz(this.GetBinZ(k2+0.5)) - this.tz(this.GetBinZ(k1+0.5))) / (k2-k1);
+
+      // Single Object3Ds that contain all bins and helpers
+      var all_bins = new THREE.Object3D();
+      var all_helpers = new THREE.Object3D();
+
+      var box_vcount = geom.faces.length*3;
+      // BufferGeometries that store geometry of all bins
+      var all_bins_buffgeom = new THREE.BufferGeometry();
+      var all_bins_linebuff = new THREE.BufferGeometry();
+
+      var single_bin_verts = new Float32Array(box_vcount*3);
+      var single_bin_norms = new Float32Array(box_vcount*3);
+      var temp_bin_verts = [];
+      // Fill a typed array with cube geometry that will be shared by all
+      // (This technically could be put into an InstancedBufferGeometry but
+      // performance gain is likely not huge )
+      for (var face = 0; face < geom.faces.length; ++face) {
+         single_bin_verts[9*face  ] = geom.vertices[geom.faces[face].a].x;
+         single_bin_verts[9*face+1] = geom.vertices[geom.faces[face].a].y;
+         single_bin_verts[9*face+2] = geom.vertices[geom.faces[face].a].z;
+         single_bin_verts[9*face+3] = geom.vertices[geom.faces[face].b].x;
+         single_bin_verts[9*face+4] = geom.vertices[geom.faces[face].b].y;
+         single_bin_verts[9*face+5] = geom.vertices[geom.faces[face].b].z;
+         single_bin_verts[9*face+6] = geom.vertices[geom.faces[face].c].x;
+         single_bin_verts[9*face+7] = geom.vertices[geom.faces[face].c].y;
+         single_bin_verts[9*face+8] = geom.vertices[geom.faces[face].c].z;
+
+         single_bin_norms[9*face  ] = geom.faces[face].vertexNormals[0].x;
+         single_bin_norms[9*face+1] = geom.faces[face].vertexNormals[0].y;
+         single_bin_norms[9*face+2] = geom.faces[face].vertexNormals[0].z;
+         single_bin_norms[9*face+3] = geom.faces[face].vertexNormals[1].x;
+         single_bin_norms[9*face+4] = geom.faces[face].vertexNormals[1].y;
+         single_bin_norms[9*face+5] = geom.faces[face].vertexNormals[1].z;
+         single_bin_norms[9*face+6] = geom.faces[face].vertexNormals[2].x;
+         single_bin_norms[9*face+7] = geom.faces[face].vertexNormals[2].y;
+         single_bin_norms[9*face+8] = geom.faces[face].vertexNormals[2].z;
+      }
 
       for (var i = i1; i < i2; ++i) {
          var binx = this.GetBinX(i+0.5), grx = this.tx(binx);
@@ -967,23 +1019,82 @@
 
                bin.scale.set(scalex*wei, scaley*wei, scalez*wei);
 
+               // Grab the coordinates and scale that are being assigned to each bin
+               for (var vi = 0; vi < box_vcount; ++vi) {
+                  temp_bin_verts.push(single_bin_verts[3*vi  ]*scalex*wei+grx);
+                  temp_bin_verts.push(single_bin_verts[3*vi+1]*scaley*wei+gry);
+                  temp_bin_verts.push(single_bin_verts[3*vi+2]*scalez*wei+grz);
+               }
+
+               // Make old bins invisible so they don't hurt performance but
+               // still cause tooltip to show up
+               bin.material.visible = false;
+
                if (JSROOT.gStyle.Tooltip > 0)
                   bin.name = name + 'x=' + JSROOT.FFormat(binx,"6.4g") + ' bin=' + (i+1) + '<br/>'
                                   + 'y=' + JSROOT.FFormat(biny,"6.4g") + ' bin=' + (j+1) + '<br/>'
                                   + 'z=' + JSROOT.FFormat(binz,"6.4g") + ' bin=' + (k+1) + '<br/>'
                                   + 'entries=' + JSROOT.FFormat(bin_content, "7.0g");
 
-               this.toplevel.add(bin);
+               all_bins.add(bin);
 
                if (this.options.Box !== 11) {
                   var helper = new THREE.BoxHelper(bin);
                   helper.material.color.set(0x000000);
                   helper.material.linewidth = 1.0;
-                  this.toplevel.add(helper)
+                  helper.material.visible = false;
+                  all_helpers.add(helper)
                }
             }
          }
       }
+
+      // Fill full size typed arrays with vertex and normal data
+      bin_verts = new Float32Array(temp_bin_verts.length);
+      bin_norms = new Float32Array(temp_bin_verts.length);
+      for (var i = 0; i<temp_bin_verts.length; ++i) {
+         bin_verts[i] = temp_bin_verts[i];
+         bin_norms[i] = single_bin_norms[i%single_bin_norms.length];
+      }
+
+      // Create mesh from bin buffergeometry
+      all_bins_buffgeom.addAttribute( 'position',
+         new THREE.BufferAttribute( bin_verts, 3 ) );
+      all_bins_buffgeom.addAttribute( 'normal',
+         new THREE.BufferAttribute( bin_norms, 3 ) );
+      var combined_bins = new THREE.Mesh(all_bins_buffgeom, material.clone());
+      this.toplevel.add(combined_bins);
+
+      // Extract geometry from helper cubes to create efficient single mesh
+      if (this.options.Box !== 11) {
+         var line_verts = [];
+         var line_indices = [];
+         // Vertex and Index data
+         for (var i = 0; i < all_helpers.children.length; ++i) {
+            var current_v = all_helpers.children[i].geometry.getAttribute('position').array;
+            for (var v = 0; v < current_v.length; ++v) {
+               line_verts.push(current_v[v]);
+            }
+            var current_i = all_helpers.children[i].geometry.index.array;
+            for (var ci = 0; ci < current_i.length; ++ci) {
+               line_indices.push(current_i[ci]+i*8);
+            }
+         }
+
+         all_bins_linebuff.setIndex(
+          new THREE.BufferAttribute( new Uint16Array(line_indices), 1 ) );
+         all_bins_linebuff.addAttribute( 'position',
+              new THREE.BufferAttribute( new Float32Array(line_verts), 3 ) );
+
+         var combined_lines = new THREE.LineSegments(
+              all_bins_linebuff, all_helpers.children[0].material.clone());
+
+         combined_lines.material.visible = true;
+         this.toplevel.add(combined_lines);
+      }
+
+      this.toplevel.add(all_bins);
+      this.toplevel.add(all_helpers);
    }
 
    JSROOT.TH3Painter.prototype.Redraw = function(resize) {

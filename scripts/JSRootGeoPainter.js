@@ -1431,9 +1431,9 @@
          if (prop.fillcolor === undefined)
             prop.fillcolor = "lightgrey";
 
-         prop.material = new THREE.MeshLambertMaterial( { transparent: _transparent,
-                              opacity: _opacity, wireframe: false, color: prop.fillcolor,
-                              side: THREE.FrontSide, vertexColors: THREE.NoColors /*THREE.VertexColors*/,
+         prop.material = new THREE.MeshPhongMaterial( { shininess: 95, transparent: true/*_transparent*/, depthTest: false, depthWrite: true,
+                              opacity: 0.2 /*_opacity*/, wireframe: false, color: prop.fillcolor, clippingPlanes: [new THREE.Plane()],
+                              side: THREE.DoubleSide, vertexColors: THREE.NoColors /*THREE.VertexColors*/,
                               overdraw: 0. } );
       }
 
@@ -1453,8 +1453,8 @@
             _opacity = node.fRGBA[3];
          }
          prop.fillcolor = new THREE.Color( node.fRGBA[0], node.fRGBA[1], node.fRGBA[2] );
-         prop.material = new THREE.MeshLambertMaterial( { transparent: _transparent,
-                          opacity: _opacity, wireframe: false, color: prop.fillcolor,
+         prop.material = new THREE.MeshPhongMaterial( { shininess: 95, transparent: true/*_transparent*/, depthTest: false,
+                          opacity: 0.2/*_opacity*/, wireframe: false, color: prop.fillcolor, clippingPlanes: [new THREE.Plane()],
                           side: THREE.FrontSide, vertexColors: THREE.NoColors /*THREE.VertexColors */,
                           overdraw: 0. } );
       }
@@ -1518,13 +1518,14 @@
          arg.node._visible = false;
 
       if (arg.node._visible) {
+      	 this._drawcnt++; 
          if (typeof prop.shape._geom === 'undefined') {
             prop.shape._geom = JSROOT.GEO.createGeometry(prop.shape);
             this.accountGeom(prop.shape._geom, prop.shape._typename);
          }
 
          geom = prop.shape._geom;
-
+     /*
       } else {
          if (this._dummy_material === undefined)
             this._dummy_material =
@@ -1534,7 +1535,7 @@
 
          prop.material = this._dummy_material;
       }
-
+	*/
       var has_childs = (chlds !== null) && (chlds.length > 0);
       var work_around = false;
 
@@ -1592,11 +1593,14 @@
       }
 
       if (this.options._bound && (arg.node._visible || this.options._full)) {
+      	
          var boxHelper = new THREE.BoxHelper( mesh );
          arg.toplevel.add( boxHelper );
       }
 
       arg.mesh = mesh;
+
+  	}
 
       if ((chlds === null) || (chlds.length == 0)) {
          // do not draw childs
@@ -1677,7 +1681,9 @@
          }
          */
 
-         if (vis && !('_visible' in obj) && (shape!==null)) {
+         var min = Math.min( Math.min( shape.fDX, shape.fDY ), shape.fDZ );
+         var vol = shape.fDX * shape.fDY * shape.fDZ;
+         if (vis && !('_visible' in obj) && (shape!==null) && vol > 15000000.0 && min > 200.0 ) {
             obj._visible = true;
             arg.viscnt++;
          }
@@ -1776,6 +1782,7 @@
                         new THREE.WebGLRenderer({ antialias : true, logarithmicDepthBuffer: true,
                                                   preserveDrawingBuffer: true }) :
                         new THREE.CanvasRenderer({antialias : true });
+      this._renderer.localClippingEnabled = true;
       this._renderer.setPixelRatio(pixel_ratio);
       this._renderer.setClearColor(0xffffff, 1);
       this._renderer.setSize(w, h);
@@ -1969,10 +1976,20 @@
       var curr = new Date().getTime();
 
       var log = "";
+      /*
+      var axhelp = new THREE.AxisHelper();
+      this._scene.add(axhelp);
+     */
+      var box = new THREE.BoxGeometry(200,200,200);
+      box = new THREE.Mesh(box, new THREE.MeshBasicMaterial());
+      this._scene.add(box);
+    
+	  
+	  this._clipPlane = THREE.Plane(/*new THREE.Vector3(0.0,1.0,0.0), 0.0*/);
 
       while(true) {
          if (this.drawNode()) {
-            this._drawcnt++;
+         //   this._drawcnt++;
             log = "Creating meshes " + this._drawcnt;
          } else
             break;
@@ -2238,7 +2255,9 @@
          this.ymin = box.min.y; this.ymax = box.max.y;
          this.zmin = box.min.z; this.zmax = box.max.z;
 
-         this.options = { Logx: false, Logy: false, Logz: false };
+         console.error('Check log setting in options which no longer exists');
+
+         // this.options = { Logx: false, Logy: false, Logz: false };
 
          this.size3d = 0; // use min/max values directly as graphical coordinates
 

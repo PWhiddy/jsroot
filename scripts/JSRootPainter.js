@@ -838,10 +838,13 @@
       if ((str.indexOf("#splitline{")==0) && (str.charAt(str.length-1)=="}")) {
          var pos = str.indexOf("}{");
          if ((pos>0) && (pos == str.lastIndexOf("}{"))) {
-            str = str.replace("}{", "\n");
+            str = str.replace("}{", "\n ");
             str = str.slice(11, str.length-1);
          }
       }
+
+      str = str.replace('^2','\xB2').replace('^3','\xB3');
+
       return str;
    }
 
@@ -1427,20 +1430,30 @@
              .attr('preserveAspectRatio','xMidYMid');
 
       } else {
-         elem = d3.select(this.svg_canvas().node().parentNode).select("." + size.clname);
+         var prnt = this.svg_canvas().node().parentNode;
+
+         elem = d3.select(prnt).select("." + size.clname);
          if (onlyget) return elem;
 
          // force redraw by resize
          this.svg_canvas().property('redraw_by_resize', true);
 
-         if (elem.empty()) {
-            elem = d3.select(this.svg_canvas().node().parentNode)
-                     .append('div').attr("class", size.clname);
+         if (elem.empty())
+            elem = d3.select(prnt).append('div').attr("class", size.clname);
+
+         // our position inside canvas, but to set 'absolute' position we should use
+         // canvas element offset relative to first parent with position
+         var offx = 0, offy = 0;
+         while ((prnt !== null) && !offx && !offy) {
+            if (prnt.style.top || prnt.style.left) break;
+            offx += prnt.offsetLeft;
+            offy += prnt.offsetTop;
+            prnt = prnt.parentNode;
          }
 
          elem.style('position','absolute')
-             .style('left', size.x + 'px')
-             .style('top', size.y + 'px')
+             .style('left', (size.x + offx) + 'px')
+             .style('top', (size.y + offy) + 'px')
              .style('width', size.width + 'px')
              .style('height', size.height + 'px');
       }
@@ -1465,7 +1478,7 @@
       return this === this.main_painter();
    }
 
-   JSROOT.TObjectPainter.prototype.SetDivId = function(divid, is_main) {
+   JSROOT.TObjectPainter.prototype.SetDivId = function(divid, is_main, pad_name) {
       // Assigns id of top element (normally <div></div> where drawing is done
       // is_main - -1 - not add to painters list,
       //            0 - normal painter (default),
@@ -1474,6 +1487,7 @@
       //            3 - if canvas and (or) frame missing, create them, but not set as main object
       //            4 - major objects like TH3 (required canvas, but no frame)
       //            5 - major objects like TGeoVolume (do not require canvas)
+      // pad_name - when specified, subpad name used for object drawin
       // In some situations canvas may not exists - for instance object drawn as html, not as svg.
       // In such case the only painter will be assigned to the first element
 
@@ -1502,7 +1516,9 @@
       }
 
       // SVG element where current pad is drawn (can be canvas itself)
-      this.pad_name = svg_c.property('current_pad');
+      this.pad_name = pad_name;
+      if (this.pad_name === undefined)
+         this.pad_name = svg_c.property('current_pad');
 
       if (is_main < 0) return;
 
@@ -1518,7 +1534,7 @@
       if (svg_p.property('pad_painter') !== this)
          svg_p.property('pad_painter').painters.push(this);
 
-      if (((is_main === 1) || (is_main === 4) || (is_main === 5)) && (svg_p.property('mainpainter') == null))
+      if (((is_main === 1) || (is_main === 4) || (is_main === 5)) && !svg_p.property('mainpainter'))
          // when this is first main painter in the pad
          svg_p.property('mainpainter', this);
    }
@@ -2700,7 +2716,7 @@
       // fill context menu for the frame
       // it could be appended to the histogram menus
 
-      var main = this.main_painter(), alone = menu.size()==0;
+      var main = this.main_painter(), alone = menu.size()==0, pad = this.root_pad();
 
       if (alone)
          menu.add("header:Frame");
@@ -2716,13 +2732,13 @@
             menu.add("Unzoom Z", main.Unzoom.bind(main,"z"));
          menu.add("Unzoom all", main.Unzoom.bind(main,"xyz"));
 
-         if (main.options) {
-            menu.addchk(main.options.Logx, "SetLogx", main.ToggleLog.bind(main,"x"));
+         if (pad) {
+            menu.addchk(pad.fLogx, "SetLogx", main.ToggleLog.bind(main,"x"));
 
-            menu.addchk(main.options.Logy, "SetLogy", main.ToggleLog.bind(main,"y"));
+            menu.addchk(pad.fLogy, "SetLogy", main.ToggleLog.bind(main,"y"));
 
             if (main.Dimension() == 2)
-               menu.addchk(main.options.Logz, "SetLogz", main.ToggleLog.bind(main,"z"));
+               menu.addchk(pad.fLogz, "SetLogz", main.ToggleLog.bind(main,"z"));
          }
          menu.add("separator");
       }
@@ -3345,11 +3361,11 @@
 
    JSROOT.Painter.drawPaveText = function(divid, pave, opt) {
 
-      var painter = new JSROOT.TPavePainter(pave);
-      painter.SetDivId(divid, 2);
+      // one could force drawing of PaveText on specific sub-pad
+      var onpad = ((typeof opt == 'string') && (opt.indexOf("onpad:")==0)) ? opt.substr(6) : undefined;
 
-      if ((typeof opt == 'string') && (opt.indexOf("onpad:")==0))
-         painter.pad_name = opt.substr(6);
+      var painter = new JSROOT.TPavePainter(pave);
+      painter.SetDivId(divid, 2, onpad);
 
       switch (pave._typename) {
          case "TPaveLabel":
@@ -3563,6 +3579,9 @@
 
    JSROOT.TPadPainter.prototype.CheckColors = function(can) {
       if (can==null) return;
+
+
+
       for (var i = 0; i < can.fPrimitives.arr.length; ++i) {
          var obj = can.fPrimitives.arr[i];
          if (obj==null) continue;
@@ -3645,6 +3664,61 @@
       return hints;
    }
 
+   JSROOT.TPadPainter.prototype.FillContextMenu = function(menu) {
+
+      if (this.pad)
+         menu.add("header: " + this.pad._typename + "::" + this.pad.fName);
+      else
+         menu.add("header: Canvas");
+
+      if (this.iscan)
+         menu.addchk((JSROOT.gStyle.Tooltip > 0), "Show tooltips", function() {
+            JSROOT.gStyle.Tooltip = (JSROOT.gStyle.Tooltip === 0) ? 1 : -JSROOT.gStyle.Tooltip;
+         });
+
+      if (!this._websocket) {
+
+         function ToggleField(arg) {
+            this.pad[arg] = this.pad[arg] ? 0 : 1;
+            var main = this.svg_pad(this.this_pad_name).property('mainpainter');
+            if (!main) return;
+
+            if ((arg.indexOf('fGrid')==0) && (typeof main.DrawGrids == 'function'))
+               main.DrawGrids();
+
+            if ((arg.indexOf('fTick')==0) && (typeof main.DrawAxes == 'function'))
+               main.DrawAxes();
+         }
+
+         menu.addchk(this.pad.fGridx, 'Grid x', 'fGridx', ToggleField);
+         menu.addchk(this.pad.fGridy, 'Grid y', 'fGridy', ToggleField);
+         menu.addchk(this.pad.fTickx, 'Tick x', 'fTickx', ToggleField);
+         menu.addchk(this.pad.fTicky, 'Tick y', 'fTicky', ToggleField);
+
+
+         this.FillAttContextMenu(menu);
+      }
+
+      menu.add("separator");
+
+      var file_name = "canvas.png";
+      if (!this.iscan) file_name = this.this_pad_name + ".png";
+
+      menu.add("Save as "+file_name, file_name, function(arg) {
+         // todo - use jqury dialog here
+         var top = this.svg_pad(this.this_pad_name);
+         if (!top.empty())
+            JSROOT.AssertPrerequisites("savepng", function() {
+               console.log('create', arg);
+               top.selectAll(".btns_layer").style("display","none");
+               saveSvgAsPng(top.node(), arg);
+               top.selectAll(".btns_layer").style("display","");
+            });
+      });
+
+      return true;
+   }
+
    JSROOT.TPadPainter.prototype.ShowContextMenu = function(evnt) {
       if (!evnt) {
 
@@ -3663,34 +3737,8 @@
 
       JSROOT.Painter.createMenu(function(menu) {
          menu.painter = pthis; // set as this in callbacks
-         if (pthis.pad)
-            menu.add("header: " + pthis.pad._typename + "::" + pthis.pad.fName);
-         else
-            menu.add("header: Canvas");
 
-         if (pthis.iscan)
-            menu.addchk((JSROOT.gStyle.Tooltip > 0), "Show tooltips", function() {
-               JSROOT.gStyle.Tooltip = (JSROOT.gStyle.Tooltip === 0) ? 1 : -JSROOT.gStyle.Tooltip;
-            });
-
-         pthis.FillAttContextMenu(menu);
-
-         menu.add("separator");
-
-         var file_name = "canvas.png";
-         if (!pthis.iscan) file_name = pthis.this_pad_name + ".png";
-
-         menu.add("Save as "+file_name, file_name, function(arg) {
-            // todo - use jqury dialog here
-            var top = this.svg_pad(this.this_pad_name);
-            if (!top.empty())
-               JSROOT.AssertPrerequisites("savepng", function() {
-                  console.log('create', arg);
-                  top.selectAll(".btns_layer").style("display","none");
-                  saveSvgAsPng(top.node(), arg);
-                  top.selectAll(".btns_layer").style("display","");
-               });
-         });
+         pthis.FillContextMenu(menu);
 
          menu.show(evnt);
       }); // end menu creation
@@ -3739,9 +3787,15 @@
 
       if ((obj == null) || !('fPrimitives' in obj)) return false;
 
-      if (this.iscan) this.CheckColors(obj);
+      this.pad.fGridx = obj.fGridx;
+      this.pad.fGridy = obj.fGridy;
+      this.pad.fTickx = obj.fTickx;
+      this.pad.fTicky = obj.fTicky;
+      this.pad.fLogx  = obj.fLogx;
+      this.pad.fLogy  = obj.fLogy;
+      this.pad.fLogz  = obj.fLogz;
 
-      if (obj.fPrimitives.arr.length !== this.pad.fPrimitives.arr.length) return false;
+      if (this.iscan) this.CheckColors(obj);
 
       var isany = false, p = 0;
       for (var n = 0; n < obj.fPrimitives.arr.length; ++n) {
@@ -3938,8 +3992,11 @@
    }
 
    JSROOT.Painter.drawCanvas = function(divid, can, opt) {
+      var nocanvas = (can===null);
+      if (nocanvas) can = JSROOT.Create("TCanvas");
+
       var painter = new JSROOT.TPadPainter(can, true);
-      if (can && opt && (opt.indexOf("white")>=0)) can.fFillColor = 0;
+      if (opt && (opt.indexOf("white")>=0)) can.fFillColor = 0;
 
       painter.SetDivId(divid, -1); // just assign id
       painter.CheckColors(can);
@@ -3949,11 +4006,8 @@
       painter.AddButton(JSROOT.ToolbarIcons.camera, "Create PNG", "CanvasSnapShot");
       painter.AddButton(JSROOT.ToolbarIcons.question, "Access context menus", "PadContextMenus");
 
-      if (can==null) {
-         if (opt.indexOf("noframe") < 0)
-            JSROOT.Painter.drawFrame(divid, null);
-         return painter.DrawingReady();
-      }
+      if (nocanvas && opt.indexOf("noframe") < 0)
+         JSROOT.Painter.drawFrame(divid, null);
 
       painter.DrawPrimitive(0, function() { painter.DrawingReady(); });
       return painter;
@@ -4197,15 +4251,19 @@
       return handle;
    }
 
-   JSROOT.TAxisPainter.prototype.DrawAxis = function(layer, w, h, transform, reverse) {
+   JSROOT.TAxisPainter.prototype.DrawAxis = function(vertical, layer, w, h, transform, reverse, second_shift) {
       // function draw complete TAxis
       // later will be used to draw TGaxis
 
       var axis = this.GetObject(),
           is_gaxis = (axis && axis._typename === 'TGaxis'),
-          vertical = (this.name !== "xaxis"),
           side = (this.name === "zaxis") ? -1  : 1, both_sides = 0,
           axis_g = layer, tickSize = 10, scaling_size = 100, text_scaling_size = 100;
+
+      this.vertical = vertical;
+
+      // shift for second ticks set (if any)
+      if (!second_shift) second_shift = 0;
 
       if (is_gaxis) {
          if (!this.lineatt) this.lineatt = JSROOT.Painter.createAttLine(axis);
@@ -4238,7 +4296,7 @@
                .call(this.lineatt.func);
       }
 
-      if (transform!== undefined)
+      if (transform !== undefined)
          axis_g.attr("transform", transform);
 
       this.CreateFormatFuncs();
@@ -4246,7 +4304,7 @@
       var center = (this.kind == 'labels') ||
                    (this.kind !== 'log' && axis.TestBit(JSROOT.EAxisBits.kCenterLabels));
 
-      var res = "", lastpos = 0, lasth = 0, textscale = 1;
+      var res = "", res2 = "", lastpos = 0, lasth = 0, textscale = 1;
 
       // first draw ticks
 
@@ -4270,12 +4328,15 @@
          if (side < 0) { h2 = -h1; h1 = 0; } else { h2 = 0; }
 
          if (res.length == 0) {
-            res += vertical ? ("M"+h1+","+handle.grpos) : ("M"+handle.grpos+","+-h1);
+            res = vertical ? ("M"+h1+","+handle.grpos) : ("M"+handle.grpos+","+(-h1));
+            res2 = vertical ? ("M"+(second_shift-h1)+","+handle.grpos) : ("M"+handle.grpos+","+(second_shift+h1));
          } else {
             res += vertical ? ("m"+(h1-lasth)+","+(handle.grpos-lastpos)) : ("m"+(handle.grpos-lastpos)+","+(lasth-h1));
+            res2 += vertical ? ("m"+(lasth-h1)+","+(handle.grpos-lastpos)) : ("m"+(handle.grpos-lastpos)+","+(h1-lasth));
          }
 
          res += vertical ? ("h"+ (h2-h1)) : ("v"+ (h1-h2));
+         res2 += vertical ? ("h"+ (h1-h2)) : ("v"+ (h2-h1));
 
          lastpos = handle.grpos;
          lasth = h2;
@@ -4283,6 +4344,9 @@
 
       if (res.length > 0)
          axis_g.append("svg:path").attr("d", res).call(this.lineatt.func);
+
+      if ((second_shift!==0) && (res2.length>0))
+         axis_g.append("svg:path").attr("d", res2).call(this.lineatt.func);
 
       var last = vertical ? h : 0,
           labelfont = JSROOT.Painter.getFontDetails(axis.fLabelFont, Math.round(axis.fLabelSize * (is_gaxis ? this.pad_height() : h))),
@@ -4463,7 +4527,7 @@
           y2 = Math.round(this.AxisToSvg("y", gaxis.fY2)),
           w = x2 - x1, h = y1 - y2;
 
-      var name = w<5 ? "yaxis" : "xaxis",
+      var vertical = w<5,
           kind = "normal",
           func = null,
           min = gaxis.fWmin,
@@ -4479,7 +4543,7 @@
 
       func.domain([min, max]);
 
-      if (name == "yaxis") {
+      if (vertical) {
          if (h > 0) {
             func.range([h,0]);
          } else {
@@ -4497,11 +4561,11 @@
          }
       }
 
-      this.SetAxisConfig(name, kind, func, min, max, min, max);
+      this.SetAxisConfig(vertical ? "yaxis" : "xaxis", kind, func, min, max, min, max);
 
       this.RecreateDrawG(true, "text_layer");
 
-      this.DrawAxis(this.draw_g, w, h, "translate(" + x1 + "," + y2 +")", reverse);
+      this.DrawAxis(vertical, this.draw_g, w, h, "translate(" + x1 + "," + y2 +")", reverse);
    }
 
 
@@ -4552,7 +4616,7 @@
 
    JSROOT.THistPainter.prototype.DecodeOptions = function(opt) {
 
-      if ((opt == null) || (opt == "")) opt = this.histo['fOption'];
+      if ((opt == null) || (opt == "")) opt = this.histo.fOption;
 
       /* decode string 'opt' and fill the option structure */
       var hdim = this.Dimension();
@@ -4561,15 +4625,15 @@
          Mark: 0, Fill: 0, Same: 0, Scat: 0, Func: 0, Star: 0,
          Arrow: 0, Box: 0, Text: 0, Char: 0, Color: 0, Contour: 0,
          Lego: 0, Surf: 0, Off: 0, Tri: 0, Proj: 0, AxisPos: 0,
-         Spec: 0, Pie: 0, List: 0, Zscale: 0, FrontBox: 1, BackBox: 1,
+         Spec: 0, Pie: 0, List: 0, Zscale: 0, FrontBox: 1, BackBox: 1, Candle: "",
          System: JSROOT.Painter.Coord.kCARTESIAN,
          AutoColor : 0, NoStat : 0, AutoZoom : false,
-         HighRes: 0, Zero: 0, Logx: 0, Logy: 0, Logz: 0, Gridx: 0, Gridy: 0,
-         Palette:0, Optimize:JSROOT.gStyle.OptimizeDraw
+         HighRes: 0, Zero: 0, Palette:0, Optimize:JSROOT.gStyle.OptimizeDraw
       };
       // check for graphical cuts
-      var chopt = opt.toUpperCase();
-      chopt = JSROOT.Painter.clearCuts(chopt);
+      var chopt = JSROOT.Painter.clearCuts(opt.toUpperCase());
+
+      var pad = this.root_pad();
 
       // if (hdim > 1) option.Scat = 1;  // default was scatter plot
 
@@ -4615,15 +4679,15 @@
          chopt = chopt.replace('NOSTAT', '');
       }
       if (chopt.indexOf('LOGX') != -1) {
-         option.Logx = 1;
+         pad.fLogx = 1;
          chopt = chopt.replace('LOGX', '');
       }
       if (chopt.indexOf('LOGY') != -1) {
-         option.Logy = 1;
+         pad.fLogy = 1;
          chopt = chopt.replace('LOGY', '');
       }
       if (chopt.indexOf('LOGZ') != -1) {
-         option.Logz = 1;
+         pad.fLogz = 1;
          chopt = chopt.replace('LOGZ', '');
       }
 
@@ -4669,6 +4733,13 @@
       if (chopt.indexOf('PIE') != -1) {
          option.Pie = 1;
          chopt = chopt.replace('PIE', '   ');
+      }
+      l = chopt.indexOf('CANDLE');
+      if (l!=-1) {
+         var l2 = l + 6;
+         while ((l2 < chopt.length) && (chopt[l2] !== " ") && (chopt[l2] !== ",")) ++l2;
+         option.Candle = chopt.slice(l+6, l2);
+         for (var i=l;i<l2;++i) chopt[i] = ' ';
       }
       l = chopt.indexOf('LEGO');
       if (l != -1) {
@@ -4808,48 +4879,17 @@
             option.Hist = 1;
          }
       }
-      l = chopt.indexOf('HBAR');
-      if (l != -1) {
-         option.Hist = 0;
-         option.Bar = 20;
-         chopt = chopt.replace('HBAR', '    ');
-         if (chopt[l + 4] == '1') {
-            option.Bar = 21;
-            chopt[l + 4] = ' ';
-         }
-         if (chopt[l + 4] == '2') {
-            option.Bar = 22;
-            chopt[l + 4] = ' ';
-         }
-         if (chopt[l + 4] == '3') {
-            option.Bar = 23;
-            chopt[l + 4] = ' ';
-         }
-         if (chopt[l + 4] == '4') {
-            option.Bar = 24;
-            chopt[l + 4] = ' ';
-         }
-      }
+      // decode bar/hbar option
       l = chopt.indexOf('BAR');
-      if (l != -1) {
+      if (l >= 0) {
          option.Hist = 0;
          option.Bar = 10;
+         if ((l>0) && (chopt[l-1]=='H')) { option.Bar = 20; chopt[l-1]=' '; }
          chopt = chopt.replace('BAR', '   ');
-         if (chopt[l + 3] == '1') {
-            option.Bar = 11;
-            chopt[l + 3] = ' ';
-         }
-         if (chopt[l + 3] == '2') {
-            option.Bar = 12;
-            chopt[l + 3] = ' ';
-         }
-         if (chopt[l + 3] == '3') {
-            option.Bar = 13;
-            chopt[l + 3] = ' ';
-         }
-         if (chopt[l + 3] == '4') {
-            option.Bar = 14;
-            chopt[l + 3] = ' ';
+         var indx = parseInt(chopt[l+3]);
+         if (!isNaN(indx) && (indx>=0) && (indx<=4)) {
+            option.Bar += indx;
+            chopt[l+3] = ' ';
          }
       }
       l = chopt.indexOf('ARR');
@@ -5006,8 +5046,10 @@
       }
       if (chopt.indexOf('A') != -1)
          option.Axis = -1;
-      if (chopt.indexOf('B') != -1)
+      if (chopt.indexOf('B') != -1) {
          option.Bar = 1;
+         option.Hist = -1;
+      }
       if (chopt.indexOf('C') != -1) {
          option.Curve = 1;
          option.Hist = -1;
@@ -5075,9 +5117,6 @@
          }
       }
 
-      // Check options incompatibilities
-      if (option.Bar == 1) option.Hist = -1;
-
       return option;
    }
 
@@ -5105,18 +5144,9 @@
       var main = this.main_painter();
       if (main!==null) this.lineatt.color = main.GetAutoColor(this.lineatt.color);
 
-      var pad = this.root_pad();
-
-      if (pad!=null) {
-         // Copy options from current pad
-         this.options.Logx = pad.fLogx;
-         this.options.Logy = pad.fLogy;
-         this.options.Logz = pad.fLogz;
-         this.options.Gridx = pad.fGridx;
-         this.options.Gridy = pad.fGridy;
-      }
-
       if (this.main_painter() !== this) return;
+
+      var pad = this.root_pad();
 
       this.zoom_xmin = this.zoom_xmax = 0;
       this.zoom_ymin = this.zoom_ymax = 0;
@@ -5310,7 +5340,11 @@
          return;
       }
 
-      var w = this.frame_width(), h = this.frame_height();
+      this.swap_xy = false;
+      if (this.options.Bar>=20) this.swap_xy = true;
+      this.logx = this.logy = false;
+
+      var w = this.frame_width(), h = this.frame_height(), pad = this.root_pad();
 
       if (this.histo.fXaxis.fTimeDisplay) {
          this.x_kind = 'time';
@@ -5332,7 +5366,9 @@
       if (this.x_kind == 'time') {
          this.x = d3.time.scale();
       } else
-      if (this.options.Logx) {
+      if (this.swap_xy ? pad.fLogy : pad.fLogx) {
+         this.logx = true;
+
          if (this.scale_xmax <= 0) this.scale_xmax = 0;
 
          if ((this.scale_xmin <= 0) && (this.nbinsx>0))
@@ -5350,14 +5386,15 @@
          this.x = d3.scale.linear();
       }
 
-      this.x.domain([this.ConvertX(this.scale_xmin), this.ConvertX(this.scale_xmax)]).range([ 0, w ]);
+      this.x.domain([this.ConvertX(this.scale_xmin), this.ConvertX(this.scale_xmax)])
+            .range(this.swap_xy ? [ h, 0 ] : [ 0, w ]);
 
       if (this.x_kind == 'time') {
          // we emulate scale functionality
          this.grx = function(val) { return this.x(this.ConvertX(val)); }
       } else
-      if (this.options.Logx) {
-         this.grx = function(val) { return (val < this.scale_xmin) ? -5 : this.x(val); }
+      if (this.logx) {
+         this.grx = function(val) { return (val < this.scale_xmin) ? (this.swap_xy ? this.x.range()[0]+5 : -5) : this.x(val); }
       } else {
          this.grx = this.x;
       }
@@ -5380,7 +5417,8 @@
          this.RevertY = function(gry) { return this.y.invert(gry); };
       }
 
-      if (this.options.Logy) {
+      if (this.swap_xy ? pad.fLogx : pad.fLogy) {
+         this.logy = true;
          if (this.scale_ymax <= 0)
             this.scale_ymax = 1;
          else
@@ -5406,15 +5444,16 @@
          this.y = d3.scale.linear()
       }
 
-      this.y.domain([ this.ConvertY(this.scale_ymin), this.ConvertY(this.scale_ymax) ]).range([ h, 0 ]);
+      this.y.domain([ this.ConvertY(this.scale_ymin), this.ConvertY(this.scale_ymax) ])
+            .range(this.swap_xy ? [ 0, w ] : [ h, 0 ]);
 
       if (this.y_kind=='time') {
          // we emulate scale functionality
          this.gry = function(val) { return this.y(this.ConvertY(val)); }
       } else
-      if (this.options.Logy) {
+      if (this.logy) {
          // make protecttion for log
-         this.gry = function(val) { return (val < this.scale_ymin) ? h+5 : this.y(val); }
+         this.gry = function(val) { return (val < this.scale_ymin) ? (this.swap_xy ? -5 : this.y.range()[0]+5) : this.y(val); }
       } else {
          this.gry = this.y;
       }
@@ -5428,41 +5467,43 @@
 
       layer.selectAll(".xgrid").remove();
       layer.selectAll(".ygrid").remove();
-      /* add a grid on x axis, if the option is set */
+
+      var pad = this.root_pad(), h = this.frame_height(), w = this.frame_width(), grid;
 
       // add a grid on x axis, if the option is set
-      if (this.options.Gridx && this.x_handle) {
+      if (pad && pad.fGridx && this.x_handle) {
+         grid = "";
+         for (var n=0;n<this.x_handle.ticks.length;++n)
+            if (this.swap_xy)
+               grid += "M0,"+this.x_handle.ticks[n]+"h"+w;
+            else
+               grid += "M"+this.x_handle.ticks[n]+",0v"+h;
 
-         var h = this.frame_height();
-
-         layer.selectAll(".xgrid")
-                .data(this.x_handle.ticks).enter()
-                  .append("svg:line")
-                  .attr("class", "xgrid")
-                  .attr("x1", function(d) { return d; })
-                  .attr("y1", h)
-                  .attr("x2", function(d) { return d; })
-                  .attr("y2",0)
-                  .style("stroke", "black")
-                  .style("stroke-width", 1)
-                  .style("stroke-dasharray", JSROOT.Painter.root_line_styles[11]);
+         if (grid.length > 0)
+          layer.append("svg:path")
+               .attr("class", "xgrid")
+               .attr("d", grid)
+               .style("stroke", "black")
+               .style("stroke-width", 1)
+               .style("stroke-dasharray", JSROOT.Painter.root_line_styles[11]);
       }
 
       // add a grid on y axis, if the option is set
-      if (this.options.Gridy && this.y_handle) {
-         var w = this.frame_width();
+      if (pad && pad.fGridy && this.y_handle) {
+         grid = "";
+         for (var n=0;n<this.y_handle.ticks.length;++n)
+            if (this.swap_xy)
+               grid += "M"+this.y_handle.ticks[n]+",0v"+h;
+            else
+               grid += "M0,"+this.y_handle.ticks[n]+"h"+w;
 
-         layer.selectAll('.ygrid')
-              .data(this.y_handle.ticks).enter()
-                 .append("svg:line")
-                 .attr("class", "ygrid")
-                 .attr("x1", 0)
-                 .attr("y1", function(d) { return d; })
-                 .attr("x2", w)
-                 .attr("y2", function(d) { return d; })
-                 .style("stroke", "black")
-                 .style("stroke-width", 1)
-                 .style("stroke-dasharray", JSROOT.Painter.root_line_styles[11]);
+         if (grid.length > 0)
+          layer.append("svg:path")
+               .attr("class", "ygrid")
+               .attr("d", grid)
+               .style("stroke", "black")
+               .style("stroke-width", 1)
+               .style("stroke-dasharray", JSROOT.Painter.root_line_styles[11]);
       }
    }
 
@@ -5503,25 +5544,28 @@
 
       var layer = this.svg_frame().select(".axis_layer"),
           w = this.frame_width(),
-          h = this.frame_height();
+          h = this.frame_height(),
+          pad = this.root_pad();
 
       this.x_handle = new JSROOT.TAxisPainter(this.histo.fXaxis, true);
       this.x_handle.SetDivId(this.divid, -1);
 
       this.x_handle.SetAxisConfig("xaxis",
-                                  (this.options.Logx && this.x_kind !== "time") ? "log" : this.x_kind,
+                                  (this.logx && (this.x_kind !== "time")) ? "log" : this.x_kind,
                                   this.x, this.xmin, this.xmax, this.scale_xmin, this.scale_xmax);
-
-      this.x_handle.DrawAxis(layer, w, h, "translate(0," + h + ")");
 
       this.y_handle = new JSROOT.TAxisPainter(this.histo.fYaxis, true);
       this.y_handle.SetDivId(this.divid, -1);
 
       this.y_handle.SetAxisConfig("yaxis",
-                                  (this.options.Logy && this.y_kind !== "time") ? "log" : this.y_kind,
+                                  (this.logy && this.y_kind !== "time") ? "log" : this.y_kind,
                                   this.y, this.ymin, this.ymax, this.scale_ymin, this.scale_ymax);
 
-      this.y_handle.DrawAxis(layer, w, h);
+      var draw_horiz = this.swap_xy ? this.y_handle : this.x_handle;
+      var draw_vertical = this.swap_xy ? this.x_handle : this.y_handle;
+
+      draw_horiz.DrawAxis(false, layer, w, h, "translate(0," + h + ")", false, pad.fTickx ? -h : 0);
+      draw_vertical.DrawAxis(true, layer, w, h, undefined, false, pad.fTicky ? w : 0);
 
       if (shrink_forbidden) return;
 
@@ -5753,13 +5797,12 @@
    }
 
    JSROOT.THistPainter.prototype.ToggleLog = function(axis) {
-      var obj = this.main_painter();
+      var obj = this.main_painter(), pad = this.root_pad();
       if (!obj) obj = this;
-
-      var curr = obj.options["Log" + axis];
+      var curr = pad["fLog" + axis];
       // do not allow log scale for labels
       if (!curr && (this[axis+"_kind"] == "labels")) return;
-      obj.options["Log" + axis] = curr ? 0 : 1;
+      pad["fLog" + axis] = curr ? 0 : 1;
       obj.RedrawPad();
    }
 
@@ -6187,12 +6230,12 @@
 
       if ((xmin === xmax) && (delta<0)) { xmin = this.xmin; xmax = this.xmax; }
 
-      var cur = d3.mouse(this.svg_frame().node());
+      var cur = d3.mouse(this.svg_frame().node()), pad = this.root_pad();
 
       if (xmin < xmax) {
          var dmin = cur[0] / this.frame_width();
          if ((dmin>0) && (dmin<1)) {
-            if (this.options.Logx) {
+            if (this.logx) {
                var factor = (xmin>0) ? JSROOT.log10(xmax/xmin) : 2;
                if (factor>10) factor = 10; else if (factor<1.5) factor = 1.5;
                xmin = xmin / Math.pow(factor, delta*dmin);
@@ -6217,7 +6260,7 @@
          var dmin = 1 - cur[1] / this.frame_height();
 
          if ((ymin < ymax) && (dmin>0) && (dmin<1))  {
-            if (this.options.Logy) {
+            if (this.logy) {
                var factor = (ymin>0) ? JSROOT.log10(ymax/ymin) : 2;
                if (factor>10) factor = 10; else if (factor<1.5) factor = 1.5;
                ymin = ymin / Math.pow(factor, delta*dmin);
@@ -6757,10 +6800,81 @@
       return true;
    }
 
+   JSROOT.TH1Painter.prototype.DrawBars = function() {
+      var width = this.frame_width(), height = this.frame_height();
+
+      this.RecreateDrawG(false, "main_layer");
+
+      var left = this.GetSelectIndex("x", "left", -1),
+          right = this.GetSelectIndex("x", "right", 1),
+          pmain = this.main_painter(),
+          pad = this.root_pad(),
+          pthis = this,
+          i, x1, x2, grx1, grx2, y, gry, w;
+
+      var bars = "", barsl = "", barsr = "", side = this.options.Bar % 10;
+
+      if (side>4) side = 4;
+
+      for (i = left; i < right; ++i) {
+         x1 = this.GetBinX(i);
+         x2 = this.GetBinX(i+1);
+
+         if (pmain.logx && (x2 <= 0)) continue;
+
+         grx1 = Math.round(pmain.grx(x1));
+         grx2 = Math.round(pmain.grx(x2));
+
+         y = this.histo.getBinContent(i+1);
+         if (pmain.logy && (y < pmain.scale_ymin)) continue;
+         gry = Math.round(pmain.gry(y));
+
+         w = grx2 - grx1;
+         grx1 += Math.round(this.histo.fBarOffset/1000*w);
+         w = Math.round(this.histo.fBarWidth/1000*w);
+
+         if (pmain.swap_xy)
+            bars += "M0,"+ grx1 + "h" + gry + "v" + w + "h" + (-gry)+ "z";
+         else
+            bars += "M"+grx1+"," + gry + "h" + w + "v" + (height - gry) + "h" + (-w)+ "z";
+
+         if (side > 0) {
+            grx2 = grx1 + w;
+            w = Math.round(w * side / 10);
+            if (pmain.swap_xy) {
+               barsl += "M0,"+ grx1 + "h" + gry + "v" + w + "h" + (-gry)+ "z";
+               barsr += "M0,"+ grx2 + "h" + gry + "v" + (-w) + "h" + (-gry)+ "z";
+            } else {
+               barsl += "M"+grx1+","+gry + "h" + w + "v" + (height - gry) + "h" + (-w)+ "z";
+               barsr += "M"+grx2+","+gry + "h" + (-w) + "v" + (height - gry) + "h" + w + "z";
+            }
+         }
+      }
+
+      if (bars.length > 0)
+         this.draw_g.append("svg:path")
+                    .attr("d", bars)
+                    .call(this.fillatt.func);
+
+      if (barsl.length > 0)
+         this.draw_g.append("svg:path")
+               .attr("d", barsl)
+               .call(this.fillatt.func)
+               .style("fill", d3.rgb(this.fillatt.color).brighter(0.5).toString());
+
+      if (barsr.length > 0)
+         this.draw_g.append("svg:path")
+               .attr("d", barsr)
+               .call(this.fillatt.func)
+               .style("fill", d3.rgb(this.fillatt.color).darker(0.5).toString());
+   }
 
    JSROOT.TH1Painter.prototype.DrawBins = function() {
       // new method, create svg:path expression ourself directly from histogram
       // all points will be used, compress expression when too large
+
+      if (this.options.Bar > 0)
+         return this.DrawBars();
 
       var width = this.frame_width(), height = this.frame_height();
 
@@ -6772,6 +6886,7 @@
       var left = this.GetSelectIndex("x", "left", -1),
           right = this.GetSelectIndex("x", "right", 2),
           pmain = this.main_painter(),
+          pad = this.root_pad(),
           pthis = this,
           res = "", lastbin = false,
           startx, currx, curry, x, grx, y, gry, curry_min, curry_max, prevy, prevx, i, besti,
@@ -6822,7 +6937,7 @@
 
          x = this.GetBinX(i);
 
-         if (this.options.Logx && (x <= 0)) continue;
+         if (this.logx && (x <= 0)) continue;
 
          grx = Math.round(pmain.grx(x));
 
@@ -6832,10 +6947,7 @@
             gry = curry;
          } else {
             y = this.histo.getBinContent(i+1);
-            if (this.options.Logy && (y < this.scale_ymin))
-               gry = height + 1;
-            else
-               gry = Math.round(pmain.gry(y));
+            gry = Math.round(pmain.gry(y));
          }
 
          if (res.length === 0) {
@@ -7002,6 +7114,7 @@
       var width = this.frame_width(),
           height = this.frame_height(),
           pmain = this.main_painter(),
+          pad = this.root_pad(),
           painter = this,
           findbin = null, show_rect = true,
           grx1, midx, grx2, gry1, midy, gry2,
@@ -7011,14 +7124,14 @@
 
       function GetBinGrX(i) {
          var x1 = painter.GetBinX(i);
-         if ((x1<0) && painter.options.Logx) return null;
+         if ((x1<0) && pmain.logx) return null;
          return pmain.grx(x1);
       }
 
       function GetBinGrY(i) {
          var y = painter.histo.getBinContent(i + 1);
-         if (painter.options.Logy && (y < painter.scale_ymin))
-            return 10*height;
+         if (pmain.logy && (y < painter.scale_ymin))
+            return pmain.swap_xy ? -1000 : 10*height;
          return Math.round(pmain.gry(y));
       }
 
@@ -7057,10 +7170,15 @@
       grx1 = Math.round(grx1);
       grx2 = Math.round(GetBinGrX(findbin+1));
 
+      if (this.options.Bar > 0) {
+         var w = grx2 - grx1;
+         grx1 += Math.round(this.histo.fBarOffset/1000*w);
+         grx2 = grx1 + Math.round(this.histo.fBarWidth/1000*w);
+      }
+
       midx = Math.round((grx1+grx2)/2);
 
       midy = gry1 = gry2 = GetBinGrY(findbin);
-
 
       if ((this.options.Error > 0) || (this.options.Mark > 0))  {
 
@@ -7078,6 +7196,8 @@
 
             gry1 = Math.round(pmain.gry(cont + binerr)); // up
             gry2 = Math.round(pmain.gry(cont - binerr)); // down
+
+            if ((cont==0) && this.IsTProfile()) findbin = null;
          }
 
          gry1 = Math.min(gry1, midy - msize);
@@ -7108,7 +7228,9 @@
       if (findbin!==null) {
          // if bin on boundary found, check that x position is ok
          if ((findbin === left) && (grx1 > pnt.x + 2))  findbin = null; else
-         if ((findbin === right-1) && (grx2 < pnt.x - 2)) findbin = null;
+         if ((findbin === right-1) && (grx2 < pnt.x - 2)) findbin = null; else
+         // if bars option used check that bar is not match
+         if ((pnt.x < grx1 - 2) || (pnt.x > grx2 + 2)) findbin = null;
       }
 
 
@@ -7319,7 +7441,7 @@
       return painter.DrawingReady();
    }
 
-   // ================= painer of raw text ========================================
+   // ================= painter of raw text ========================================
 
    JSROOT.RawTextPainter = function(txt) {
       JSROOT.TBasePainter.call(this);
