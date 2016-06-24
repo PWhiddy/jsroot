@@ -19,7 +19,7 @@
           <a id="forkme_banner" href="https://github.com/PWhiddy/jsroot">View on GitHub</a>
 
           <h1 id="project_title">CERN SFT Google Summer of Code 2016</h1>
-          <h2 id="project_tagline">3D Graphics in JavaScript ROOT</h2>
+          <h2 id="project_tagline">A Broad Summary of my work with JavaScript ROOT</h2>
 
             <section id="downloads">
               <a class="zip_download_link" href="https://github.com/PWhiddy/jsroot/zipball/master">Download this project as a .zip file</a>
@@ -34,19 +34,79 @@
         <h3>
 <a id="welcome" class="anchor" href="#welcome" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Week 1</h3>
 
-<p>Week 1 desc </p>
+<p>May 8-15</p>
+<p>Becoming familiar with JSRoot, trying out its features, and assessing the state of the project. Going over Sergey's initial email and reading through code, reading some docuementation.</p> 
 
-<a id="welcome" class="anchor" href="#welcome" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Week 2</h3>
+<h3>
+<a id="welcome2" class="anchor" href="#welcome" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Week 2</h3>
 
-<p>Week 2 desc </p>
+<p>May 16-22</p>
+<p>Testing JSRoots performance and comparing it to other WebGL applications to get an idea of what is possible. Noticed the 3D histograms could likely have their performance improved. After a few failed attempts of getting desktop ROOT to install on my mac, tried on an ubuntu machine. Trying out all the interactive features (:</p>
 
-<a id="welcome" class="anchor" href="#welcome" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Week 3</h3>
+<h3>
+<a id="welcome3" class="anchor" href="#welcome" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Week 3, Program Start</h3>
 
-<p>Week 3 desc </p>
+<p>May 23-30</p>
+<p>First commit to get started was to make the 3 axis histogram rendering much
+smoother. By using BufferGeometry I reduced the number of draw calls from 1000 to just 2, removing the main bottleneck from the rendering. Now it should be possible to render a histogram with
+substantially more geometry on even a slower computer.
+I was able to preserve all of the original interactivity
+(highlighting, tooltips) by keeping the old meshes for the
+intersection tests, but disabling their actual rendering. 
+Here are a couple screenshots comparing performance on my old computer
+</p>
+<figure>
+  <img src="images/lofps.png">
+  <figcaption>Before</figcaption>
+</figure>
+<figure>
+  <img src="images/highfps.png">
+  <figcaption>After</figcaption>
+</figure>
 
-<a id="welcome" class="anchor" href="#welcome" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Week 4</h3>
+<p>During this week I also set up a slack messaging group for the GSOC CERN students to get to get to know each other and talk about their projects. 10 of us are in the group.</p>
 
-<p>Week 4 desc </p>
+<h3>
+<a id="welcome4" class="anchor" href="#welcome" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Week 4</h3>
+
+<p>May 31-June 6</p>
+<p>My finals week. Didn't have too much progress on the project other than browsing some code.</p>
+
+<h3>
+<a id="welcome5" class="anchor" href="#welcome" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Week 5</h3>
+
+<p>June 7-13</p>
+<p>Got a rough initial implementation of large geometry trimming. The method baiscally works by calculating the bounding volume of each piece, as well as its minimum bounding dimension, and marking that piece invisible if it is below a minimum theshold volume and smallest dimension. This way especially thin or narrow parts will cut out. A better version of this will be to set the threshold for a target number of volumes, rather than the current threshold tuned to the alice geometry. Here is an image with the cutoff set rather high, not showing too much detail </p>
+<img src="images/transparent.png">
+<p>During this week I migrated to a new machine, a PC that is much faster than my old one. Days of installing software and the lot :p but running much quicker now. This week was also when I started to notice big issues with transparency and z-buffer artifacts. I did a lot of experimenting with disbling the depthWrite and depthTest material options, as well as various levels of transparency and camera clipping planes. Disabling the depth test may be a good option for high transparency, but is not a complete solution.</p>
+
+<h3>
+<a id="welcome6" class="anchor" href="#welcome" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Week 6</h3>
+
+<p>June 14-20</p>
+<p>Here I began trying out threejs's new clipping features. The modular javaascript framework is relatively new to me, but I figure out how to load in and use new modules. I was able to implement a rough interactive cutting and transparency adjustment feature using dat.gui.</p>
+<figure>
+  <img src="images/cut.png">
+  <figcaption>Interface not visible here, but shows a nice cut right down the middle (:</figcaption>
+</figure>
+<p>This week I was looking at some webgl demos and saw some very nice looking ambient occulusion code. I thought it would be cool if it could be used to see more detail on jsroot's models, and I was actually abe to get it to work! The code didn't need too much adjusting, and it seems to make more subtle features in the geometry visible compared to basic shading.</p>
+<figure>
+  <img src="images/Atlas.png">
+  <figcaption>Atlas</figcaption>
+</figure>
+<figure>
+  <img src="images/AtlasAOCombine.png">
+  <figcaption>AtlasAOCombine</figcaption>
+</figure>
+<figure>
+  <img src="images/AtlasAOonly.png">
+  <figcaption>AtlasAOonly</figcaption>
+</figure>
+
+<h3>
+<a id="welcome7" class="anchor" href="#welcome" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Week 7</h3>
+
+<p>June 21-27</p>
 
       </section>
     </div>
