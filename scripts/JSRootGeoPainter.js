@@ -48,7 +48,7 @@
    JSROOT.TGeoPainter.prototype = Object.create( JSROOT.TObjectPainter.prototype );
 
    JSROOT.TGeoPainter.prototype.CreateToolbar = function(args) {
-      if ( this._toolbar !== null ) return;
+      if (this._toolbar) return;
       var painter = this;
       var buttonList = [{
          name: 'toImage',
@@ -188,7 +188,7 @@
 
    JSROOT.TGeoPainter.prototype.addControls = function() {
 
-      if (this._controls !== null) return;
+      if (this._controls) return;
 
       var painter = this;
 
@@ -201,7 +201,63 @@
       this._controls.target.copy(this._lookat);
       this._controls.update();
 
-      this._controls.addEventListener( 'change', function() { painter.Render3D(0); } );
+      var control_changed = false, mouse = { x:0, y: 0 };
+
+      this._controls.addEventListener( 'change', function() { control_changed = true; painter.Render3D(0); } );
+
+      this._controls.addEventListener( 'end', function() {
+         if (control_changed) return;
+
+         mouse.x = mouse.x / painter._renderer.domElement.width * 2 - 1;
+         mouse.y = -mouse.y / painter._renderer.domElement.height * 2 + 1;
+         var raycaster = new THREE.Raycaster();
+
+         raycaster.setFromCamera( mouse, painter._camera );
+         var intersects = raycaster.intersectObjects(painter._scene.children, true);
+
+         console.log('context', mouse, 'intersects', intersects.length);
+
+         for (var n=0;n<intersects.length;++n) {
+            var obj = intersects[n].object;
+            console.log(obj.type, 'name', obj.name,'nname', obj.nname);
+         }
+
+         control_changed = true;
+      });
+
+      this._context_menu = function(evnt) {
+         control_changed = false;
+
+         mouse.x = ('offsetX' in evnt) ? evnt.offsetX : evnt.layerX;
+         mouse.y = ('offsetY' in evnt) ? evnt.offsetY : evnt.layerY;
+      }
+
+      this._datgui = new dat.GUI({width:650});
+      var self = this;
+      var toggleclip = this._datgui.add(this, 'enableClipping');
+      toggleclip.onChange( function (value) {
+         self.enableClipping = value;
+         self.updateClipping();
+      });
+
+      var xclip = this._datgui.add(this, 'clipX', -2000, 2000);
+      var yclip = this._datgui.add(this, 'clipY', -2000, 2000);
+      var zclip = this._datgui.add(this, 'clipZ', -2000, 2000);
+      xclip.onChange( function (value) {
+         self.clipX = value;
+         self.updateClipping();
+      });
+      yclip.onChange( function (value) {
+         self.clipY = value;
+         self.updateClipping();
+      });
+      zclip.onChange( function (value) {
+         self.clipZ = value;
+         self.updateClipping();
+      });
+
+
+      this._renderer.domElement.addEventListener( 'contextmenu', this._context_menu, false );
 
       if ( this.options._debug || this.options._grid ) {
          this._tcontrols = new THREE.TransformControls( this._camera, this._renderer.domElement );
@@ -305,27 +361,17 @@
    }
 
    JSROOT.TGeoPainter.prototype.accountGeom = function(geom, shape_typename) {
+      // used to calculate statistic over created geometries
 
-   //   if (geom && ((geom.getAttribute('position').count==0))) {
-   //      console.log('Problem with ' + shape_typename);
-   //   }
+      if (shape_typename === 'TGeoShapeAssembly') return;
 
-      // used to calculate statistic over created geometry
-      if (shape_typename === 'TGeoShapeAssembly')
-         return;
-      if (geom === null)
-         return JSROOT.GEO.warn('Not supported ' + shape_typename);
+      if (!geom) return JSROOT.GEO.warn('Not supported ' + shape_typename);
 
       this._num_geom++;
-      if (('vertices' in geom) && ('faces' in geom)) {
-         this._num_vertices += geom.vertices.length;
-         this._num_faces += geom.faces.length;
-      } else {
 
-         var attr = geom.getAttribute('position');
-         this._num_vertices += attr.count / 3;
-         this._num_faces += attr.count / 9;//geom.index.count / 3;
-      }
+      this._num_faces += JSROOT.GEO.numGeometryFaces(geom);
+
+      this._num_vertices += JSROOT.GEO.numGeometryVertices(geom);
    }
 
    JSROOT.TGeoPainter.prototype.accountNodes = function(mesh) {
@@ -368,12 +414,36 @@
 
          geom.scale(flip.x, flip.y, flip.z);
 
-         // geom.computeBoundingSphere();
-         geom.computeFaceNormals();
+         if (geom.type == 'BufferGeometry') {
+
+            var attr = geom.getAttribute('position'), d;
+
+            // we should swap second and third point in each face
+            for (var n=0;n<attr.array.length;n+=9)
+               for (var k=0;k<3;++k) {
+                  d = attr.array[n+k+3];
+                  attr.array[n+k+3] = attr.array[n+k+6];
+                  attr.array[n+k+6] = d;
+               }
+
+            // normals are calculated with normal geometry and correctly scaled
+            // geom.computeVertexNormals();
+
+         } else {
+
+            var face, d;
+            for (var n=0;n<geom.faces.length;++n) {
+               face = geom.faces[n];
+               d = face.b; face.b = face.c; face.c = d;
+            }
+
+            // normals are calculated with normal geometry and correctly scaled
+            // geom.computeFaceNormals();
+         }
 
          shape[gname] = geom;
 
-         this.accountGeom(geom);
+         this.accountGeom(geom, shape._typename);
       }
 
       var mesh = new THREE.Mesh( geom, material );
@@ -389,13 +459,14 @@
    JSROOT.TGeoPainter.prototype.drawNode = function() {
       // return false when nothing todo
       // return true if creates next node
-      // return 1 when waiting for Worker
+      // return 1 when call after short timeout
+      // return 2 when call be done from processWorkerReply
 
       if (!this._clones || !this._draw_nodes || this._draw_nodes_ready) return false;
 
       // first of all, create geometries (using worker if available)
 
-      var todo = [], ready = [], waiting = 0;
+      var unique = [], todo = [], ready = [], waiting = 0;
 
       for (var n=0;n<this._draw_nodes.length;++n) {
          var entry = this._draw_nodes[n];
@@ -407,26 +478,37 @@
 
          // if not geometry exists, either create it or submit to worker
          if (shape._geom !== undefined) {
-            if (ready.length < 200) ready.push(n);
+            if (ready.length < 1000) ready.push(n);
          } else
-         if (!shape._geom_worker) {
-            shape._geom_worker = true;
+         if (shape._geom_worker) {
+            waiting++; // number of waiting for worker
+         } else
+         if (unique.indexOf(shape) < 0) {
+            unique.push(shape); // only to avoid duplication
             todo.push({ indx: n, nodeid: entry.nodeid, shape: shape });
             if (todo.length > 50) break;
-         } else {
-            waiting++; // number of waiting for worker
          }
       }
 
       // console.log('collected todo', todo.length,'ready', ready.length, 'waiting', waiting);
 
-      if (this.canSubmitToWorker() && (todo.length > 0)) {
-         for (var s=0;s<todo.length;++s)
-            todo[s].shape = JSROOT.clone(todo[s].shape, null, true);
-         this.submitToWorker({ shapes: todo });
-         if (ready.length == 0) return 1; //
+      if ((todo.length > 0) && this.options.use_worker) {
+         if (this.canSubmitToWorker()) {
+            for (var s=0;s<todo.length;++s) {
+               unique[s]._geom_worker = true; // mark shape as processed by worker
+               todo[s].shape = JSROOT.clone(todo[s].shape, null, true);
+            }
+            waiting += todo.length;
+            this.submitToWorker({ shapes: todo });
+         } else {
+            if (!this._worker_ready) return 1;
+         }
+
          todo = [];
       }
+
+      // we wait reply from the worker, no need to set timeout
+      if ((waiting > 0) && this.options.use_worker && (ready.length == 0)) return 2;
 
       // create geometries
       if (todo.length > 0) {
@@ -457,12 +539,16 @@
 
          var mesh = null;
 
-         if (prop.shape._geom !== null) {
+         if (JSROOT.GEO.numGeometryFaces(prop.shape._geom) > 0) {
             if (obj3d.matrixWorld.determinant() > -0.9) {
                mesh = new THREE.Mesh( prop.shape._geom, prop.material );
             } else {
                mesh = this.createFlippedMesh(obj3d, prop.shape, prop.material);
             }
+
+            mesh.name = prop.name;
+            mesh.nname = prop.nname;
+
             obj3d.add(mesh);
          }
 
@@ -530,6 +616,16 @@
       this._renderer.setClearColor(0xffffff, 1);
       this._renderer.setSize(w, h);
 
+      // Clipping Planes
+      this.enableClipping = false;
+      this.clipX = 0.0;
+      this.clipY = 0.0;
+      this.clipZ = 0.0;
+
+      this._clipPlanes = [ new THREE.Plane(new THREE.Vector3( 1, 0, 0), this.clipX), 
+                           new THREE.Plane(new THREE.Vector3( 0,-1, 0), this.clipY),
+                           new THREE.Plane(new THREE.Vector3( 0, 0, 1), this.clipZ) ];
+
       var pointLight = new THREE.PointLight(0xefefef);
       this._camera.add( pointLight );
       pointLight.position.set(10, 10, 10);
@@ -584,6 +680,14 @@
       this.continueDraw();
    }
 
+   JSROOT.TGeoPainter.prototype.updateClipping = function(offset) {
+      this._renderer.clippingPlanes = this.enableClipping ? this._clipPlanes : [];
+      this._clipPlanes[0].constant = this.clipX;
+      this._clipPlanes[1].constant = this.clipY;
+      this._clipPlanes[2].constant = this.clipZ;
+      this.Render3D(0);
+   }
+
    JSROOT.TGeoPainter.prototype.adjustCameraPosition = function() {
 
       var box = new THREE.Box3().setFromObject(this._toplevel);
@@ -615,7 +719,7 @@
       this._lookat = new THREE.Vector3(midx, midy, midz);
       this._camera.lookAt(this._lookat);
 
-      if (this._controls !== null) {
+      if (this._controls) {
          this._controls.target.copy(this._lookat);
          this._controls.update();
       }
@@ -728,7 +832,7 @@
 
       this.add_3d_canvas(size, this._renderer.domElement);
 
-      this.CreateToolbar( { container: this.select_main().node() } );
+      this.CreateToolbar();
 
       this.startDrawGeometry(true);
 
@@ -754,7 +858,7 @@
          // stop creation after 100 sec, render as is
          if (now - this._startm > 1e5) break;
 
-         if ((now - currtm > interval) || (res === 1)) {
+         if ((now - currtm > interval) || (res === 1) || (res === 2)) {
             JSROOT.progress(log);
             if (this._webgl && (now - this._last_render_tm > interval) && (this._last_render_cnt != this._drawcnt)) {
                if (this._first_drawing)
@@ -763,7 +867,8 @@
                this._last_render_tm = new Date().getTime();
                this._last_render_cnt = this._drawcnt;
             }
-            return setTimeout(this.continueDraw.bind(this), 10);
+            if (res !== 2) setTimeout(this.continueDraw.bind(this), (res === 1) ? 100 : 1);
+            return;
          }
       }
 
@@ -772,7 +877,7 @@
 
       if (t2 - this._startm > 300) {
          JSROOT.progress('Rendering geometry');
-         return setTimeout(this.completeDraw.bind(this, true), 0);
+         return setTimeout(this.completeDraw.bind(this, true), 10);
       }
 
       this.completeDraw(true);
@@ -827,30 +932,32 @@
          if ('log' in e.data)
             return JSROOT.console('geo: ' + e.data.log);
 
+         e.data.tm3 = new Date().getTime();
+
          if ('init' in e.data) {
             pthis._worker_ready = true;
-            return JSROOT.console('Worker ready: ' + ((new Date()).getTime() - e.data.tm0.getTime()));
+            return JSROOT.console('Worker ready: ' + (e.data.tm3 - e.data.tm0));
          }
 
          pthis.processWorkerReply(e.data);
       };
 
       // send initialization message with clones
-      this._worker.postMessage( { init: true, tm0: new Date(), clones: this._clones.nodes } );
+      this._worker.postMessage( { init: true, tm0: new Date().getTime(), clones: this._clones.nodes } );
    }
 
    JSROOT.TGeoPainter.prototype.canSubmitToWorker = function() {
       if (!this._worker) return false;
 
-      // if (!this._worker_ready || (this._worker_jobs > 3)) return false;
-
-      return true;
+      return this._worker_ready && (this._worker_jobs == 0);
    }
 
    JSROOT.TGeoPainter.prototype.submitToWorker = function(job) {
       if (!this._worker) return false;
 
       this._worker_jobs++;
+
+      job.tm0 = new Date().getTime();
 
       this._worker.postMessage(job);
    }
@@ -870,13 +977,19 @@
                var object = loader.parse(item.json);
                shape._geom = object;
                this.accountGeom(shape._geom, shape._typename);
+            } else {
+               shape._geom = null; // mark that geometry should not be created
             }
 
             delete shape._geom_worker;
-
          }
 
-         return;
+         job.tm4 = new Date().getTime();
+
+         console.log('Get reply from worker', job.tm3-job.tm2, ' decode json in ', job.tm4-job.tm3);
+
+         // invoke methods immediately
+         return this.continueDraw();
       }
    }
 
@@ -904,7 +1017,7 @@
 
       this._scene.overrideMaterial = null;
 
-      this.Render3D();
+      this.Render3D(0);
 
       if (close_progress) JSROOT.progress();
 
@@ -912,9 +1025,9 @@
       var pthis = this;
       var dom = this.select_main().node();
 
-      if (dom !== null) {
-         // dom.tabIndex = 0;
-         // dom.focus();
+      if (dom) {
+         dom.focus();
+         dom.tabIndex = 0;
          dom.onkeypress = function(e) {
             if (!e) e = event;
             switch ( e.keyCode ) {
@@ -940,12 +1053,18 @@
 
       if (!first_time) {
          this.helpText();
-         if (this._scene !== null)
+         if (this._scene)
             this.deleteChildren(this._scene);
-         if ( this._tcontrols !== null)
+         if (this._tcontrols)
             this._tcontrols.dispose();
-         if (this._controls !== null)
+
+         if (this._controls)
             this._controls.dispose();
+
+         if (this._context_menu)
+            this._renderer.domElement.removeEventListener( 'contextmenu', this._context_menu, false );
+
+         this._datgui.destroy();
 
          var obj = this.GetObject();
          if (obj) delete obj._painter;
@@ -953,7 +1072,7 @@
          if (this._worker) this._worker.terminate();
       }
 
-      this._scene = null;
+      delete this._scene;
       this._scene_width = 0;
       this._scene_height = 0;
       this._renderer = null;
@@ -963,9 +1082,10 @@
 
       this.first_render_tm = 0;
 
-      this._controls = null;
-      this._tcontrols = null;
-      this._toolbar = null;
+      delete this._controls;
+      delete this._context_menu;
+      delete this._tcontrols;
+      delete this._toolbar;
 
       delete this._worker;
    }
@@ -1012,13 +1132,12 @@
    JSROOT.TGeoPainter.prototype.toggleWireFrame = function(obj) {
       var painter = this;
 
-      var f = function(obj2) {
+      obj.traverse(function(obj2) {
          if ( obj2.hasOwnProperty("material") && !(obj2 instanceof THREE.GridHelper) ) {
             if (!painter.ownedByTransformControls(obj2))
                obj2.material.wireframe = !obj2.material.wireframe;
          }
-      }
-      obj.traverse(f);
+      });
       this.Render3D();
    }
 
