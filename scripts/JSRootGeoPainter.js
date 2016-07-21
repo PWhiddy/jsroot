@@ -183,14 +183,19 @@
          opt = opt.replace("clip", " ");
       }
 
-      if (opt.indexOf("highlight")>=0) {
-         res.highlight = true;
-         opt = opt.replace("highlight", " ");
+      if (opt.indexOf("noworker")>=0) {
+         res.use_worker = -1;
+         opt = opt.replace("noworker", " ");
       }
 
       if (opt.indexOf("worker")>=0) {
-         res.use_worker = true;
+         res.use_worker = 1;
          opt = opt.replace("worker", " ");
+      }
+
+      if (opt.indexOf("highlight")>=0) {
+         res.highlight = true;
+         opt = opt.replace("highlight", " ");
       }
 
       if (opt.indexOf("wire")>=0) {
@@ -297,7 +302,7 @@
 
 
    JSROOT.TGeoPainter.prototype.TestVisibleObjects = function() {
-      this.TestMatrixes();
+      // this.TestMatrixes();
 
       return this.startDrawGeometry();
 
@@ -489,12 +494,13 @@
 
       function GetIntersects(mouse) {
          var pnt = {
-            x: mouse.x / painter._renderer.domElement.width * 2 - 1.13,
-            y: -mouse.y / painter._renderer.domElement.height * 2 + 1.1
+            x: mouse.x / painter._renderer.domElement.width * 2 - 1,
+            y: -mouse.y / painter._renderer.domElement.height * 2 + 1
          }
 
          raycaster.setFromCamera( pnt, painter._camera );
          var intersects = raycaster.intersectObjects(painter._scene.children, true);
+
          var clippedIntersects = [];
 
          if (painter.enableX || painter.enableY || painter.enableZ ) {
@@ -519,7 +525,6 @@
             intersects = clippedIntersects;
 
          }
-
          //console.log("intersects " + intersects.length);
          return intersects;
 
@@ -654,7 +659,7 @@
                painter.Render3D(0);
             }
          }
-         
+
          var names = [];
 
          for (var n=0;n<intersects.length;++n) {
@@ -679,7 +684,6 @@
       this._num_geom = 0;
       this._num_vertices = 0;
       this._num_faces = 0;
-      this._num_nodes = 0;
    }
 
    JSROOT.TGeoPainter.prototype.accountGeom = function(geom, shape_typename) {
@@ -694,11 +698,6 @@
       this._num_faces += JSROOT.GEO.numGeometryFaces(geom);
 
       this._num_vertices += JSROOT.GEO.numGeometryVertices(geom);
-   }
-
-   JSROOT.TGeoPainter.prototype.accountNodes = function(mesh) {
-      // used to calculate statistic over created meshes
-      if (mesh !== null) this._num_nodes++;
    }
 
    JSROOT.TGeoPainter.prototype.getMatrixFlip = function(matrix) {
@@ -782,8 +781,6 @@
          }
 
          shape[gname] = geom;
-
-         this.accountGeom(geom, shape._typename);
       }
 
       var mesh = new THREE.Mesh( geom, material );
@@ -796,7 +793,7 @@
    }
 
 
-   JSROOT.TGeoPainter.prototype.drawNode = function() {
+   JSROOT.TGeoPainter.prototype.nextDrawAction = function() {
       // return false when nothing todo
       // return true if one could perform next action immediately
       // return 1 when call after short timeout required
@@ -804,26 +801,25 @@
 
       if (!this._clones || (this.drawing_stage == 0)) return false;
 
-
       if (this.drawing_stage == 1) {
-         // first copy visibility flags, one should deliver info to the worker
-         this._clones.MarkVisisble();
-         this.drawing_stage = 2;
-         return true;
-      }
 
-      if (this.drawing_stage == 2) {
+         // wait until worker is really started
+         if ((this.options.use_worker>0) && this._worker && !this._worker_ready) return 1;
+
+         // first copy visibility flags and check how many unique visible nodes exists
+         var numvis = this._clones.MarkVisisble();
+
+         // extract camera projection matrix for selection
          var matrix = this._first_drawing ? null : JSROOT.GEO.CreateProjectionMatrix(this._camera);
 
-         // here we decide if we use worker for the collection of nodes to draw
+         // here we decide if we need worker for the drawings
          // main reason - too large geometry and large time to scan all camera positions
+         var need_worker = (numvis > 10000) || (matrix && (this._clones.ScanVisible() > 1e5));
 
-         var use_worker = false;
-         if (this._worker_ready && matrix)
-            if (this._clones.ScanVisible() > 1e5) use_worker = true;
-         use_worker = false;
+         if (need_worker && !this._worker && (this.options.use_worker>=0))
+            this.startWorker(); // we starting worker, but it may not be ready so fast
 
-         if (!use_worker) {
+         if (!need_worker || !this._worker_ready) {
             var tm1 = new Date().getTime();
             this._new_draw_nodes = this._clones.CollectVisibles(this.options.maxlimit, JSROOT.GEO.CreateFrustum(matrix));
             var tm2 = new Date().getTime();
@@ -852,6 +848,9 @@
       }
 
       if (this.drawing_stage == 4) {
+         // here we merge new and old list of nodes for drawing,
+         // normally operation is fast and can be implemented with one call
+
          if (this._draw_nodes) {
             var del = this._clones.MergeVisibles(this._new_draw_nodes, this._draw_nodes), dcnt = 0;
             // remove should be fast, do it here
@@ -893,7 +892,7 @@
             if (ready.length < 1000) ready.push(n);
          } else
          if (shape._geom_worker) {
-            waiting++; // number of waiting for worker
+            waiting++; // number of waiting geom for worker
          } else
          if (unique.indexOf(shape) < 0) {
             unique.push(shape); // only to avoid duplication
@@ -904,32 +903,38 @@
 
       // console.log('collected todo', todo.length,'ready', ready.length, 'waiting', waiting);
 
-      if ((todo.length > 0) && this.options.use_worker) {
+      if (todo.length > 0) {
          if (this.canSubmitToWorker()) {
+            // if we could submit task to the worker - ok
             for (var s=0;s<todo.length;++s) {
                unique[s]._geom_worker = true; // mark shape as processed by worker
                todo[s].shape = JSROOT.clone(todo[s].shape, null, true);
             }
             waiting += todo.length;
             this.submitToWorker({ shapes: todo });
-         } else {
-            if (!this._worker_ready) return 1;
+            return 1;
          }
 
-         todo = [];
-      }
+         // when task cannot be submitted to worker, process it in main context
 
-      // we wait reply from the worker, no need to set timeout
-      if ((waiting > 0) && this.options.use_worker && (ready.length == 0)) return 2;
+         var starttm = new Date().getTime();
 
-      // create geometries
-      if (todo.length > 0) {
          for (var s=0;s<todo.length;++s) {
             var shape = todo[s].shape;
+
+            // do not create composite in main thread, when worker is exists (exclude first drawing)
+            if (this._worker && (shape._typename == 'TGeoCompositeShape') && !this._first_drawing) continue;
+
+            //if (shape.fName == 'Rich1AerogelWrapSubQ3') {
+            //   var item = this._draw_nodes[todo[s].indx];
+            //   console.log('stack ' + this._clones.ResolveStack(item.stack).name);
+            //}
+
             shape._geom = JSROOT.GEO.createGeometry(shape);
-            this.accountGeom(shape._geom, shape._typename);
             delete shape._geom_worker; // remove flag
             ready.push(todo[s].indx); // one could add it to ready list
+
+            if ((s>5) && (new Date().getTime() - starttm > 100)) break;
          }
       }
 
@@ -947,11 +952,14 @@
 
          var prop = JSROOT.GEO.getNodeProperties(clone.kind, nodeobj, true);
 
-         this._drawcnt++;
-
          var mesh = null;
 
          if (JSROOT.GEO.numGeometryFaces(prop.shape._geom) > 0) {
+
+            this._drawcnt++;
+
+            this.accountGeom(prop.shape._geom, prop.shape._typename);
+
             prop.material.wireframe = this.options.wireframe;
 
             if (obj3d.matrixWorld.determinant() > -0.9) {
@@ -981,11 +989,14 @@
          entry.done = true; // mark element as processed
       }
 
-      // doing its job well, can be called next time
-      if ((todo.length > 0) || (ready.length > 0)) return true;
+      // doing our job well, can be called next time immediately
+      if (ready.length > 0) return true;
 
-      // worker does not deliver results, wait little longer
-      if (waiting > 0) return 1;
+      // if there is geometries to created, repeat with short timeout
+      if (todo.length > 0) return 1;
+
+      // all job by the worker, let him to call out function
+      if (waiting > 0) return 2;
 
       // here everything is completed, we could cleanup data and finish
 
@@ -1070,7 +1081,7 @@
       this.accountClear();
 
       this._startm = new Date().getTime();
-      this._last_render_tm = this._startm;
+      this._last_render_at = this._startm;
       this._last_render_cnt = 0;
       this._drawcnt = 0; // counter used to build meshes
       this.drawing_stage = 1;
@@ -1185,8 +1196,6 @@
       }
       this._controls.target.copy(this._lookat);
       this._controls.update();
-      this.Render3D();
-
    }
 
    JSROOT.TGeoPainter.prototype.completeScene = function() {
@@ -1290,7 +1299,7 @@
       this._first_drawing = true;
 
       // activate worker
-      if (this.options.use_worker) this.startWorker();
+      if (this.options.use_worker > 0) this.startWorker();
 
       this.createScene(this._webgl, size.width, size.height, window.devicePixelRatio);
 
@@ -1305,30 +1314,36 @@
 
    JSROOT.TGeoPainter.prototype.continueDraw = function() {
 
-      var currtm = new Date().getTime();
+      // nothing to do - exit
+      if (this.drawing_stage === 0) return;
 
-      var interval = 300;
+      var tm0 = new Date().getTime(),
+          interval = 300, now = tm0;
 
       while(true) {
 
-         var res = this.drawNode();
+         var res = this.nextDrawAction();
+
+         now = new Date().getTime();
 
          if (!res) break;
 
          var log = "Creating meshes " + this._drawcnt;
-
-         var now = new Date().getTime();
+         if (this.drawing_stage < 5) log = "Collecting visibles";
 
          // stop creation after 100 sec, render as is
-         if (now - this._startm > 1e5) break;
+         if (now - this._startm > 1e5) {
+            this.drawing_stage = 0;
+            break;
+         }
 
-         if ((now - currtm > interval) || (res === 1) || (res === 2)) {
+         if ((now - tm0 > interval) || (res === 1) || (res === 2)) {
             JSROOT.progress(log);
-            if (this._webgl && (now - this._last_render_tm > interval) && (this._last_render_cnt != this._drawcnt)) {
+            if (this._webgl && (this._last_render_cnt != this._drawcnt) && (now - this._last_render_at > this.last_render_tm)) {
                if (this._first_drawing)
                   this.adjustCameraPosition();
-               this._renderer.render(this._scene, this._camera);
-               this._last_render_tm = new Date().getTime();
+               this.Render3D(-1);
+               this._last_render_at = new Date().getTime();
                this._last_render_cnt = this._drawcnt;
             }
             if (res !== 2) setTimeout(this.continueDraw.bind(this), (res === 1) ? 100 : 1);
@@ -1336,10 +1351,11 @@
          }
       }
 
-      var t2 = new Date().getTime();
-      JSROOT.console('Create tm = ' + (t2-this._startm) + ' geom ' + this._num_geom + ' vertices ' + this._num_vertices + ' faces ' + this._num_faces + ' nodes ' + this._num_nodes);
+      var take_time = now - this._startm;
 
-      if (t2 - this._startm > 300) {
+      JSROOT.console('Create tm = ' + take_time + ' geom ' + this._num_geom + ' vertices ' + this._num_vertices + ' faces ' + this._num_faces);
+
+      if (take_time > 300) {
          JSROOT.progress('Rendering geometry');
          return setTimeout(this.completeDraw.bind(this, true), 10);
       }
@@ -1361,10 +1377,12 @@
 
          var tm2 = new Date();
 
+         this.last_render_tm = tm2.getTime() - tm1.getTime();
+
          delete this.render_tmout;
 
-         if (this.first_render_tm === 0) {
-            this.first_render_tm = tm2.getTime() - tm1.getTime();
+         if ((this.first_render_tm === 0) && (tmout===0)) {
+            this.first_render_tm = this.last_render_tm;
             JSROOT.console('First render tm = ' + this.first_render_tm);
          }
 
@@ -1444,9 +1462,7 @@
             var shape = this._clones.GetNodeShape(item.nodeid);
 
             if (item.json) {
-               var object = loader.parse(item.json);
-               shape._geom = object;
-               this.accountGeom(shape._geom, shape._typename);
+               shape._geom = loader.parse(item.json);
             } else {
                shape._geom = null; // mark that geometry should not be created
             }
@@ -1536,6 +1552,7 @@
       this._camera = null;
 
       this.first_render_tm = 0;
+      this.last_render_tm = 2000;
 
       this.drawing_stage = 0;
 
@@ -2017,4 +2034,3 @@
    return JSROOT.Painter;
 
 }));
-
