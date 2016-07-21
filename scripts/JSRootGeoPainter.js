@@ -133,7 +133,7 @@
       var res = { _grid: false, _bound: false, _debug: false,
                   _full: false, _axis:false, _count:false, wireframe: false,
                    scale: new THREE.Vector3(1,1,1), more:1,
-                   use_worker: false, update_browser: true, clip_control: false, highlight:false };
+                   use_worker: false, update_browser: true, clip_control: false, highlight: true };
 
       var _opt = JSROOT.GetUrlOption('_grid');
       if (_opt !== null && _opt == "true") res._grid = true;
@@ -486,14 +486,32 @@
 
       function GetIntersects(mouse) {
          var pnt = {
-            x: mouse.x / painter._renderer.domElement.width * 2 - 1,
-            y: -mouse.y / painter._renderer.domElement.height * 2 + 1
+            x: mouse.x / painter._renderer.domElement.width * 2 - 1.13,
+            y: -mouse.y / painter._renderer.domElement.height * 2 + 1.1
          }
 
          raycaster.setFromCamera( pnt, painter._camera );
          var intersects = raycaster.intersectObjects(painter._scene.children, true);
+         var clippedIntersects = [];
 
-         return intersects;
+         for (var i = 0; i < intersects.length; ++i) {
+            var clipped = false;
+            var point = intersects[i].point;
+
+            if (painter.enableX && painter._clipPlanes[0].normal.dot(point) > painter._clipPlanes[0].constant ) {
+               clipped = true;
+            } else if (painter.enableY && painter._clipPlanes[1].normal.dot(point) > painter._clipPlanes[1].constant ) {
+               clipped = true;
+            } else if (painter.enableZ && painter._clipPlanes[2].normal.dot(point) > painter._clipPlanes[2].constant ) {
+               clipped = true;
+            }
+         
+            if (clipped === true) {
+               clippedIntersects.push(intersects[i]);
+            }
+         }
+         console.log("intersects " + clippedIntersects.length);
+         return clippedIntersects;
 
       }
 
