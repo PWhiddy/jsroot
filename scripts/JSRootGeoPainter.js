@@ -133,7 +133,7 @@
       var res = { _grid: false, _bound: false, _debug: false,
                   _full: false, _axis:false, _count:false, wireframe: false,
                    scale: new THREE.Vector3(1,1,1), more:1,
-                   use_worker: false, update_browser: true, clip_control: false, highlight: false };
+                   use_worker: false, update_browser: true, clip_control: false, highlight:false };
 
       var _opt = JSROOT.GetUrlOption('_grid');
       if (_opt !== null && _opt == "true") res._grid = true;
@@ -380,9 +380,6 @@
          this.options.wireframe = !this.options.wireframe;
          this.changeWireFrame(this._scene, this.options.wireframe);
       });
-      menu.addchk(this.options.wireframe, "Highlight Selection", function() {
-         this.options.highlight = !this.options.highlight;
-      });
       menu.addchk(this.options.wireframe, "Reset camera position", function() {
          this.adjustCameraPosition();
          this.Render3D();
@@ -501,31 +498,6 @@
          raycaster.setFromCamera( pnt, painter._camera );
          var intersects = raycaster.intersectObjects(painter._scene.children, true);
 
-         var clippedIntersects = [];
-
-         if (painter.enableX || painter.enableY || painter.enableZ ) {
-
-            for (var i = 0; i < intersects.length; ++i) {
-               var clipped = false;
-               var point = intersects[i].point;
-
-               if (painter.enableX && painter._clipPlanes[0].normal.dot(point) > painter._clipPlanes[0].constant ) {
-                  clipped = true;
-               } else if (painter.enableY && painter._clipPlanes[1].normal.dot(point) > painter._clipPlanes[1].constant ) {
-                  clipped = true;
-               } else if (painter.enableZ && painter._clipPlanes[2].normal.dot(point) > painter._clipPlanes[2].constant ) {
-                  clipped = true;
-               }
-            
-               if (clipped === true) {
-                  clippedIntersects.push(intersects[i]);
-               }
-            }
-
-            intersects = clippedIntersects;
-
-         }
-         //console.log("intersects " + intersects.length);
          return intersects;
 
       }
@@ -1194,7 +1166,7 @@
            painter.Render3D();
         }, step * 20);
       }
-      this._controls.target.copy(this._lookat);
+      this._controls.target = target;
       this._controls.update();
    }
 
