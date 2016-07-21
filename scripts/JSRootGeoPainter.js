@@ -963,10 +963,17 @@
 
       // doing our job well, can be called next time immediately
       if (ready.length > 0) return true;
+<<<<<<< HEAD
 
       // if there is geometries to created, repeat with short timeout
       if (todo.length > 0) return 1;
 
+=======
+
+      // if there is geometries to created, repeat with short timeout
+      if (todo.length > 0) return 1;
+
+>>>>>>> 21bd70fd2fe624c664b40aea79d3acd50b8b6923
       // all job by the worker, let him to call out function
       if (waiting > 0) return 2;
 
@@ -1324,9 +1331,15 @@
       }
 
       var take_time = now - this._startm;
+<<<<<<< HEAD
 
       JSROOT.console('Create tm = ' + take_time + ' geom ' + this._num_geom + ' vertices ' + this._num_vertices + ' faces ' + this._num_faces);
 
+=======
+
+      JSROOT.console('Create tm = ' + take_time + ' geom ' + this._num_geom + ' vertices ' + this._num_vertices + ' faces ' + this._num_faces);
+
+>>>>>>> 21bd70fd2fe624c664b40aea79d3acd50b8b6923
       if (take_time > 300) {
          JSROOT.progress('Rendering geometry');
          return setTimeout(this.completeDraw.bind(this, true), 10);
