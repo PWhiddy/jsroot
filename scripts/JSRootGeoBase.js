@@ -1139,28 +1139,40 @@
    }
 
 
-   JSROOT.GEO.createComposite = function ( shape, faces_limit ) {
+   JSROOT.GEO.createComposite = function ( shape, faces_limit, return_bsp ) {
 
       if (faces_limit === undefined) faces_limit = 10000;
 
-      var geom1 = JSROOT.GEO.createGeometry(shape.fNode.fLeft, faces_limit / 2);
-      geom1.computeVertexNormals();
+      var bsp1, bsp2;
+
       var matrix1 = JSROOT.GEO.createMatrix(shape.fNode.fLeftMat);
-      if (matrix1!==null) {
-         if (matrix1.determinant() < -0.9) JSROOT.GEO.warn('Axis reflection in composite shape - not supported');
-         geom1.applyMatrix(matrix1);
+
+      var geom1 = JSROOT.GEO.createGeometry(shape.fNode.fLeft, faces_limit / 2, !matrix1);
+      if (geom1 instanceof ThreeBSP) {
+         bsp1 = geom1;
+      } else {
+         if (geom1 instanceof THREE.Geometry) geom1.computeVertexNormals();
+         if (matrix1) {
+            if (matrix1.determinant() < -0.9) JSROOT.GEO.warn('Axis reflection in composite shape - not supported');
+            geom1.applyMatrix(matrix1);
+         }
+         bsp1 = new ThreeBSP(geom1);
       }
 
-      var geom2 = JSROOT.GEO.createGeometry(shape.fNode.fRight, faces_limit / 2);
-      geom2.computeVertexNormals();
       var matrix2 = JSROOT.GEO.createMatrix(shape.fNode.fRightMat);
-      if (matrix2 !== null) {
-         if (matrix2.determinant() < -0.9) JSROOT.GEO.warn('Axis reflection in composite shape - not supported');
-         geom2.applyMatrix(matrix2);
+
+      var geom2 = JSROOT.GEO.createGeometry(shape.fNode.fRight, faces_limit / 2, !matrix2);
+      if (geom2 instanceof ThreeBSP) {
+         bsp2 = geom2;
+      } else {
+         if (geom2 instanceof THREE.Geometry) geom2.computeVertexNormals();
+         if (matrix2) {
+            if (matrix2.determinant() < -0.9) JSROOT.GEO.warn('Axis reflection in composite shape - not supported');
+            geom2.applyMatrix(matrix2);
+         }
+         bsp2 = new ThreeBSP(geom2);
       }
 
-      var bsp1 = new ThreeBSP(geom1);
-      var bsp2 = new ThreeBSP(geom2);
       var bsp = null;
 
       if (shape.fNode._typename === 'TGeoIntersection')
@@ -1177,16 +1189,18 @@
          return geom1;
       }
 
-      var res = bsp.toGeometry();
+      if (return_bsp) return bsp;
 
-      if (res.faces.length === 0)
-         JSROOT.GEO.warn('Composite shape problem ' + shape.fNode.fLeft._typename + ' faces ' + geom1.faces.length + ' '+shape.fNode.fRight._typename + 'faces ' + geom2.faces.length + '  res_faces ' + res.faces.length);
+      var res = bsp.toBufferGeometry();
+
+      if (JSROOT.GEO.numGeometryFaces(res) === 0)
+         JSROOT.GEO.warn('Composite shape problem ' + shape.fNode.fLeft._typename + ' faces ' + JSROOT.GEO.numGeometryFaces(geom1) + ' ' + shape.fNode.fRight._typename + 'faces ' + JSROOT.GEO.numGeometryFaces(geom2) + '  res_faces 0');
 
       return res;
    }
 
 
-   JSROOT.GEO.createGeometry = function( shape, limit ) {
+   JSROOT.GEO.createGeometry = function( shape, limit, return_bsp ) {
 
       switch (shape._typename) {
          case "TGeoBBox": return JSROOT.GEO.createCube( shape );
@@ -1209,7 +1223,7 @@
          case "TGeoXtru": return JSROOT.GEO.createXtru( shape );
          case "TGeoParaboloid": return JSROOT.GEO.createParaboloid( shape, limit );
          case "TGeoHype": return JSROOT.GEO.createHype( shape, limit );
-         case "TGeoCompositeShape": return JSROOT.GEO.createComposite( shape, limit );
+         case "TGeoCompositeShape": return JSROOT.GEO.createComposite( shape, limit, return_bsp );
          case "TGeoShapeAssembly": return null;
       }
 
@@ -1291,6 +1305,9 @@
    JSROOT.GEO.numGeometryFaces = function(geom) {
       if (!geom) return 0;
 
+      if (geom instanceof ThreeBSP)
+         return geom.numPolygons();
+
       if (geom.type == 'BufferGeometry') {
          var attr = geom.getAttribute('position');
          return attr ? attr.count / 3 : 0;
@@ -1301,6 +1318,9 @@
 
    JSROOT.GEO.numGeometryVertices = function(geom) {
       if (!geom) return 0;
+
+      if (geom instanceof ThreeBSP)
+         return geom.numPolygons() * 3;
 
       if (geom.type == 'BufferGeometry') {
          var attr = geom.getAttribute('position');

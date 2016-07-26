@@ -98,7 +98,7 @@
    }
 } (function(JSROOT) {
 
-   JSROOT.version = "dev 22/07/2016";
+   JSROOT.version = "dev 25/07/2016";
 
    JSROOT.source_dir = "";
    JSROOT.source_min = false;
@@ -838,7 +838,13 @@
                         "###threejs/examples/js/renderers/Projector.js;" +
                         "###threejs/examples/js/renderers/CanvasRenderer.js;" +
                         "###threejs/examples/js/controls/OrbitControls.js;" +
-                        "###threejs/examples/js/controls/TransformControls.js;";
+                        "###threejs/examples/js/controls/TransformControls.js;" +
+                        "###threejs/examples/js/shaders/CopyShader.js;" +
+                        "###threejs/examples/js/postprocessing/EffectComposer.js;" +
+                        "###threejs/examples/js/postprocessing/MaskPass.js;" +
+                        "###threejs/examples/js/postprocessing/RenderPass.js;" +
+                        "###threejs/examples/js/postprocessing/ShaderPass.js;" +
+                        "###threejs/examples/js/shaders/SSAOShader.js;"
            extrafiles += "###threejs/examples/fonts/helvetiker_regular.typeface.json;";
          } else {
             mainfiles += "$$$scripts/three" + ext + ".js;" +

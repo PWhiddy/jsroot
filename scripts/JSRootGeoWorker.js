@@ -37,7 +37,7 @@ onmessage = function(e) {
    if (e.data.shapes) {
       // this is task to create geometries in the worker
 
-      var shapes = e.data.shapes;
+      var shapes = e.data.shapes, transferables = [];
 
       var tm1 = new Date().getTime();
 
@@ -52,9 +52,21 @@ onmessage = function(e) {
          var item = shapes[n];
 
          if (item.geom) {
-            var bufgeom = new THREE.BufferGeometry();
-            bufgeom.fromGeometry(item.geom);
-            item.json = bufgeom.toJSON(); // convert to data which can be transfered to the main thread
+            var bufgeom;
+            if (item.geom instanceof THREE.BufferGeometry) {
+               bufgeom = item.geom;
+            } else {
+               var bufgeom = new THREE.BufferGeometry();
+               bufgeom.fromGeometry(item.geom);
+            }
+
+            item.buf_pos = bufgeom.attributes.position.array;
+            item.buf_norm = bufgeom.attributes.normal.array;
+
+            // use nice feature of HTML workers with transferables
+            // we allow to take ownership of buffer from local array
+            // therefore buffer content not need to be copied
+            transferables.push(item.buf_pos.buffer, item.buf_norm.buffer);
          }
 
          delete item.shape; // no need to send back shape
@@ -68,10 +80,7 @@ onmessage = function(e) {
 
       e.data.tm2 = new Date().getTime();
 
-      var res = { shapes : [] };
-      res.tm2 = new Date().getTime();
-
-      return postMessage(e.data);
+      return postMessage(e.data, transferables);
    }
 
    if (e.data.collect !== undefined) {

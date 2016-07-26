@@ -575,12 +575,12 @@
                } else if (painter.enableZ && painter._clipPlanes[2].normal.dot(point) > painter._clipPlanes[2].constant ) {
                   clipped = true;
                }
-            
+
                if (clipped === true) {
                   clippedIntersects.push(intersects[i]);
                }
             }
-            
+
             intersects = clippedIntersects;
          }
          //console.log("intersects " + intersects.length);
@@ -1510,7 +1510,7 @@
 
          if ((now - tm0 > interval) || (res === 1) || (res === 2)) {
             JSROOT.progress(log);
-            if (this._webgl && (this._last_render_cnt != this._drawcnt) && (now - this._last_render_at > this.last_render_tm)) {
+            if (false && this._webgl && (this._last_render_cnt != this._drawcnt) && (now - this._last_render_at > this.last_render_tm)) {
                if (this._first_drawing)
                   this.adjustCameraPosition();
                this.Render3D(-1);
@@ -1634,15 +1634,16 @@
       }
 
       if ('shapes' in job) {
-         var loader = new THREE.BufferGeometryLoader();
 
          for (var n=0;n<job.shapes.length;++n) {
             var item = job.shapes[n];
 
             var shape = this._clones.GetNodeShape(item.nodeid);
 
-            if (item.json) {
-               shape._geom = loader.parse(item.json);
+            if (item.buf_pos && item.buf_norm) {
+               shape._geom = new THREE.BufferGeometry();
+               shape._geom.addAttribute( 'position', new THREE.BufferAttribute( item.buf_pos, 3 ) );
+               shape._geom.addAttribute( 'normal', new THREE.BufferAttribute( item.buf_norm, 3 ) );
             } else {
                shape._geom = null; // mark that geometry should not be created
             }
