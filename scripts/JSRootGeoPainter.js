@@ -460,9 +460,11 @@
 
       var appearance = this._datgui.addFolder('Appearance');
 
-      appearance.add(this, '_enableSSAO').name('Smooth Lighting (SSAO)').onChange( function (value) {
-         painter.Render3D(0);
-      }).listen();
+      if (this._webgl) {
+         appearance.add(this, '_enableSSAO').name('Smooth Lighting (SSAO)').onChange( function (value) {
+            painter.Render3D(0);
+         }).listen();
+      }
 
       appearance.add(this.options, 'highlight').name('Highlight Selection').onChange( function (value) {
          if (value === false) {
@@ -482,39 +484,52 @@
 
       // Advanced Options
 
-      var advanced = this._datgui.addFolder('Advanced');
+      if (this._webgl) {
+         var advanced = this._datgui.addFolder('Advanced');
+         
+         advanced.add( this._advceOptions, 'aoClamp').onChange( function (value) {
+            painter._ssaoPass.uniforms[ 'aoClamp' ].value = value;
+            painter._enableSSAO = true;
+            painter.Render3D(0);
+         }).listen();
 
-      advanced.add( this._advceOptions, 'aoClamp').onChange( function (value) {
-         painter._ssaoPass.uniforms[ 'aoClamp' ].value = value;
-         painter._enableSSAO = true;
-         painter.Render3D(0);
-      }).listen();
+         advanced.add( this._advceOptions, 'lumInfluence').onChange( function (value) {
+            painter._ssaoPass.uniforms[ 'lumInfluence' ].value = value;
+            painter._enableSSAO = true;
+            painter.Render3D(0);
+         }).listen();
+         
+         advanced.add(this._advceOptions, 'shininess').onChange( function (value) {
+            painter._toplevel.traverse( function (node) {
+               if (node instanceof THREE.Mesh) {
+                  node.material.shininess = value;
+               }
+            });
+            painter.Render3D(0);
+         }).listen();
 
-      advanced.add( this._advceOptions, 'lumInfluence').onChange( function (value) {
-         painter._ssaoPass.uniforms[ 'lumInfluence' ].value = value;
-         painter._enableSSAO = true;
-         painter.Render3D(0);
-      }).listen();
+         /*  Only Supported by MeshStandardMaterial
+         advanced.add(this._advceOptions, 'metalness').onChange( function (value) {
+            painter._toplevel.traverse( function (node) {
+               if (node instanceof THREE.Mesh) {
+                  node.material.metalness = value;
+               }
+            });
+            painter.Render3D(0);
+         }).listen();
 
-      advanced.add(this._advceOptions, 'metalness').onChange( function (value) {
-         painter._toplevel.traverse( function (node) {
-            if (node instanceof THREE.Mesh) {
-               node.material.metalness = value;
-            }
-         });
-         painter.Render3D(0);
-      }).listen();
+         advanced.add(this._advceOptions, 'roughness').onChange( function (value) {
+            painter._toplevel.traverse( function (node) {
+               if (node instanceof THREE.Mesh) {
+                  node.material.roughness = value;
+               }
+            });
+            painter.Render3D(0);
+         }).listen();
+         */
 
-      advanced.add(this._advceOptions, 'roughness').onChange( function (value) {
-         painter._toplevel.traverse( function (node) {
-            if (node instanceof THREE.Mesh) {
-               node.material.roughness = value;
-            }
-         });
-         painter.Render3D(0);
-      }).listen();
-
-      advanced.add(this, 'resetAdvanced').name('Reset');
+         advanced.add(this, 'resetAdvanced').name('Reset');
+      }
 
       this._datgui.close();
 
@@ -554,8 +569,9 @@
 
       function GetIntersects(mouse) {
          var pnt = {
-            x: mouse.x / painter._renderer.getSize().width * 2 - 1,
-            y: -mouse.y / painter._renderer.getSize().height * 2 + 1
+            // domElement gives correct coordinate with canvas render, but isn't always right for webgl renderer
+            x: mouse.x / (painter._webgl ? painter._renderer.getSize().width : painter._renderer.domElement.width) * 2 - 1,
+            y: -mouse.y / (painter._webgl ? painter._renderer.getSize().height : painter._renderer.domElement.height) * 2 + 1
          }
 
          raycaster.setFromCamera( pnt, painter._camera );
@@ -1130,7 +1146,7 @@
       // Lights 
 
       this._lights = new THREE.Object3D();
-      var intensity = 0.8;
+      var intensity = 0.5;
       var lightColor = 0xc0c0c0;
       this._lights.add( new THREE.PointLight(lightColor, intensity) );
       this._lights.add( new THREE.PointLight(lightColor, intensity) );
@@ -1142,7 +1158,7 @@
       this._lights.add( new THREE.PointLight(lightColor, intensity) );
       this._lights.add( new THREE.PointLight(lightColor, intensity) );
 
-      this._lights.add( new THREE.PointLight(lightColor, 0.8) );
+      this._lights.add( new THREE.PointLight(lightColor, 0.5) );
 
       this._scene.add( this._lights );
       this.updateLights(8000);  
@@ -1154,8 +1170,9 @@
 
       this._advceOptions = { aoClamp: 0.35,
                         lumInfluence: 0.4,
-                           metalness: 0.7,
-                           roughness: 0.65 };
+                           shininess: 100
+                          /* metalness: 0.7,
+                           roughness: 0.65*/ };
 
       if (webgl) {
          var renderPass = new THREE.RenderPass( this._scene, this._camera );
@@ -1204,13 +1221,22 @@
    }
 
    JSROOT.TGeoPainter.prototype.resetAdvanced = function() {
-      this._advceOptions.aoClamp = 0.35; 
-      this._advceOptions.lumInfluence = 0.4;
-      this._advceOptions.metalness = 0.7;
-      this._advceOptions.roughness = 0.65;
+      if (this._webgl) {
+         this._advceOptions.aoClamp = 0.35; 
+         this._advceOptions.lumInfluence = 0.4;
+         this._advceOptions.shininess = 100;
+         //this._advceOptions.metalness = 0.7;
+         //this._advceOptions.roughness = 0.65;
 
-      this._ssaoPass.uniforms[ 'aoClamp' ].value = 0.35;
-      this._ssaoPass.uniforms[ 'lumInfluence' ].value = 0.4;
+         this._ssaoPass.uniforms[ 'aoClamp' ].value = 0.35;
+         this._ssaoPass.uniforms[ 'lumInfluence' ].value = 0.4;
+      }
+      this._toplevel.traverse( function (node) {
+         if (node instanceof THREE.Mesh) {
+            node.material.shininess = 100;
+         }
+      });
+      /*
       this._toplevel.traverse( function (node) {
          if (node instanceof THREE.Mesh) {
             node.material.metalness = 0.7;
@@ -1221,6 +1247,7 @@
             node.material.roughness = 0.65;
          }
       });
+      */
       this.Render3D(0);
    }
 
@@ -1544,7 +1571,7 @@
          var tm1 = new Date();
 
          // do rendering, most consuming time
-         if (this._enableSSAO) {
+         if (this._webgl && this._enableSSAO) {
             this._scene.overrideMaterial = this._depthMaterial;
         //    this._renderer.logarithmicDepthBuffer = false;
             this._renderer.render(this._scene, this._camera, this._depthRenderTarget, true);
